@@ -1645,8 +1645,19 @@ async function resolveManual(embed, site, label, hint) {
           log("servidor " + label + ": ALTCHA PBKDF2 resuelto en " + solution.time + " ms");
         }
         const payloadB64 = btoa(unescape(encodeURIComponent(JSON.stringify(solutionPayload))));
-        const origin = new URL(realUrl).origin;
-        const posted = await kino.fetch(realUrl, {
+        // ALTCHA may be served from a separate anti-bot host. Submit to the form's actual
+        // action, not blindly to the original Voe URL; the response HTML exposes that action.
+        const formTag = /<form\\b[^>]*>/i.exec(html);
+        const formAction = formTag && /\\baction=["']([^"']*)["']/i.exec(formTag[0]);
+        let postUrl = realUrl;
+        try {
+          if (formAction && formAction[1]) postUrl = new URL(formAction[1], realUrl).href;
+        } catch {}
+        let origin = new URL(postUrl).origin;
+        let postHostPath = "/";
+        try { const postU = new URL(postUrl); postHostPath = postU.host + postU.pathname; } catch {}
+        log("servidor " + label + ": destino POST ALTCHA=" + postHostPath);
+        const posted = await kino.fetch(postUrl, {
           method: "POST",
           headers: {
             "User-Agent": headers["User-Agent"], Referer: realUrl, Origin: origin,
