@@ -626,6 +626,26 @@ function decodeBase64Text(value) {
     return "";
   }
 }
+function extractVoeEncodedConfig(html) {
+  const source = String(html || "");
+  const scripts = source.match(/<script\b[^>]*>[\s\S]*?<\/script>/gi) || [];
+  for (const tag of scripts) {
+    if (!/\btype\s*=\s*["']application\/json["']/i.test(tag)) continue;
+    const body = tag.replace(/^<script\b[^>]*>/i, "").replace(/<\/script>\s*$/i, "").trim();
+    try {
+      const parsed = JSON.parse(body);
+      const candidates = typeof parsed === "string" ? [parsed] :
+        Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+      const encoded = candidates.find((item) => item.length > 80);
+      if (encoded) return encoded;
+    } catch {}
+    const match = /^\s*\[?\s*["']([^"']{80,})["']\s*\]?\s*;?\s*$/.exec(body);
+    if (match) return match[1];
+  }
+  const inline = /(?:playerConfig|videoConfig|config)\s*=\s*["']([^"']{80,})["']/i.exec(source);
+  return inline ? inline[1] : "";
+}
+
 function decodeVoeConfig(encoded) {
   try {
     let value = String(encoded).replace(/[A-Za-z]/g, (c) => {
@@ -1558,8 +1578,7 @@ async function resolveManual(embed, site, label, hint) {
         if (!rr.ok) { log("servidor " + label + ": redirección VOE respondió HTTP " + rr.status); return null; }
         html = rr.text();
       }
-      let config = /<script[^>]+type=["']application\/json["'][^>]*>\s*(?:\[\s*)?["']([^"']+)["']/.exec(html);
-      let encoded = config && config[1];
+      let encoded = extractVoeEncodedConfig(html);
       if (!encoded) {
         const direct = findDirectMedia(html);
         if (direct) {
@@ -1676,8 +1695,7 @@ async function resolveManual(embed, site, label, hint) {
           return directStream(postDirect.url, label + " · " + site.name, realUrl,
             postDirect.hls ? "application/x-mpegURL" : postDirect.dash ? "application/dash+xml" : "video/mp4");
         }
-        config = /<script[^>]+type=["']application\/json["'][^>]*>\s*\[\s*["']([^"']+)["']\s*\]\s*<\/script>/i.exec(html);
-        encoded = config && config[1];
+        encoded = extractVoeEncodedConfig(html);
         if (!encoded) {
           const hasJsonScript = /<script[^>]+type=["']application\/json/i.test(html);
           const hasAltcha = /altcha-widget|name=["']altcha["']/i.test(html);
