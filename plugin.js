@@ -1588,6 +1588,7 @@ async function resolveManual(embed, site, label, hint) {
           (cj.challenge && typeof cj.challenge === "object" ? cj.challenge : cj));
         const keys = Object.keys(challengeData);
         const algorithm = String(challengeData.algorithm || "").toLowerCase().replace(/[-_]/g, "");
+        log("servidor " + label + ": ALTCHA recibido antes de resolver algorithm=" + algorithm + "; keys=" + keys.join(",") + "; cost=" + String(challengeData.cost || "-") + "; keyLength=" + String(challengeData.keyLength || "-") + "; keyPrefixLen=" + String(challengeData.keyPrefix || "").length + "; outerKeys=" + Object.keys(cj).join(","));
         const started = Date.now();
         let solutionPayload = null;
 
