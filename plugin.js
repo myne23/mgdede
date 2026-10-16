@@ -626,6 +626,26 @@ function decodeBase64Text(value) {
     return "";
   }
 }
+function extractVoeEncodedConfig(html) {
+  const source = String(html || "");
+  const scripts = source.match(/<script\b[^>]*>[\s\S]*?<\/script>/gi) || [];
+  for (const tag of scripts) {
+    if (!/\btype\s*=\s*["']application\/json["']/i.test(tag)) continue;
+    const body = tag.replace(/^<script\b[^>]*>/i, "").replace(/<\/script>\s*$/i, "").trim();
+    try {
+      const parsed = JSON.parse(body);
+      const candidates = typeof parsed === "string" ? [parsed] :
+        Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+      const encoded = candidates.find((item) => item.length > 80);
+      if (encoded) return encoded;
+    } catch {}
+    const match = /^\s*\[?\s*["']([^"']{80,})["']\s*\]?\s*;?\s*$/.exec(body);
+    if (match) return match[1];
+  }
+  const inline = /(?:playerConfig|videoConfig|config)\s*=\s*["']([^"']{80,})["']/i.exec(source);
+  return inline ? inline[1] : "";
+}
+
 function decodeVoeConfig(encoded) {
   try {
     let value = String(encoded).replace(/[A-Za-z]/g, (c) => {
@@ -641,6 +661,32 @@ function decodeVoeConfig(encoded) {
     return "";
   }
 }
+function extractVoeSource(decoded) {
+  const value = String(decoded || "").trim();
+  if (!value) return "";
+  const visit = (node, depth) => {
+    if (depth > 8 || node == null) return "";
+    if (Array.isArray(node)) {
+      for (const item of node) { const found = visit(item, depth + 1); if (found) return found; }
+      return "";
+    }
+    if (typeof node === "object") {
+      for (const [key, item] of Object.entries(node)) {
+        if (key.toLowerCase() === "source" && typeof item === "string" && /^https?:\/\//i.test(item.replace(/\\u0026/gi, "&").replace(/\\\//g, "/"))) return item;
+        const found = visit(item, depth + 1);
+        if (found) return found;
+      }
+    }
+    return "";
+  };
+  try {
+    const found = visit(JSON.parse(value), 0);
+    if (found) return found;
+  } catch {}
+  const match = /"source"\s*:\s*"((?:\\.|[^"\\])+)"/.exec(value);
+  return match ? match[1] : "";
+}
+
 function parseOkruPlayerOptions(html) {
   const tags = String(html || "").match(/<[^>]+\bdata-options\s*=\s*(?:"[\s\S]*?"|'[\s\S]*?')[^>]*>/gi) || [];
   for (const tag of tags) {
@@ -1558,8 +1604,7 @@ async function resolveManual(embed, site, label, hint) {
         if (!rr.ok) { log("servidor " + label + ": redirección VOE respondió HTTP " + rr.status); return null; }
         html = rr.text();
       }
-      let config = /<script[^>]+type=["']application\/json["'][^>]*>\s*(?:\[\s*)?["']([^"']+)["']/.exec(html);
-      let encoded = config && config[1];
+      let encoded = extractVoeEncodedConfig(html);
       if (!encoded) {
         const direct = findDirectMedia(html);
         if (direct) {
@@ -1676,8 +1721,7 @@ async function resolveManual(embed, site, label, hint) {
           return directStream(postDirect.url, label + " · " + site.name, realUrl,
             postDirect.hls ? "application/x-mpegURL" : postDirect.dash ? "application/dash+xml" : "video/mp4");
         }
-        config = /<script[^>]+type=["']application\/json["'][^>]*>\s*\[\s*["']([^"']+)["']\s*\]\s*<\/script>/i.exec(html);
-        encoded = config && config[1];
+        encoded = extractVoeEncodedConfig(html);
         if (!encoded) {
           const hasJsonScript = /<script[^>]+type=["']application\/json/i.test(html);
           const hasAltcha = /altcha-widget|name=["']altcha["']/i.test(html);
@@ -1720,9 +1764,9 @@ async function resolveManual(embed, site, label, hint) {
       }
       if (!encoded) { log("servidor " + label + ": VOE no entregó configuración tras la consulta"); return null; }
       const decoded = decodeVoeConfig(encoded);
-      const source = /"source"\s*:\s*"([^"]+)"/.exec(decoded);
-      if (!source || !source[1]) { log("servidor " + label + ": configuración VOE no contiene source reconocible"); return null; }
-      const streamUrl = source[1].replace(/\\u0026/g, "&").replace(/\\\//g, "/");
+      const source = extractVoeSource(decoded);
+      if (!source) { log("servidor " + label + ": configuración VOE no contiene source reconocible"); return null; }
+      const streamUrl = source.replace(/\\u0026/g, "&").replace(/\\\//g, "/").replace(/&amp;/g, "&");
       log("servidor " + label + ": URL de VOE resuelta directamente");
       return directStream(streamUrl, label + " · " + site.name, embed, /\.m3u8/i.test(streamUrl) ? "application/x-mpegURL" : undefined);
     }
