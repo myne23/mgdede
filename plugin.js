@@ -532,7 +532,7 @@ async function capture(server) {
 }
 
 export async function resolve(ref) {
-  log("Megadede plugin build=0.1.13 (Voe config extraction diagnostics)");
+  log("Megadede plugin build=0.1.14 (StreamWish HTTP redirect diagnostics)");
   await null;
   const lazy = /^srv:(\d+):(mg:\/.*)$/.exec(String(ref));
   const epRef = lazy ? lazy[2] : String(ref);
@@ -1095,6 +1095,22 @@ async function resolveStreamwishDirect(embed, site, label, headers) {
       const finalTarget = response.url || currentTarget;
       const html = response.text();
       let media = findHlsKeyMedia(html, finalTarget, "streamwish") || findDirectMedia(html);
+      if (!media && html.length < 3000) {
+        const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+        const bodyMatch = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html);
+        const visibleStart = String(bodyMatch ? bodyMatch[1] : html)
+          .replace(/<script[\s\S]*?<\/script>/gi, " ")
+          .replace(/<style[\s\S]*?<\/style>/gi, " ")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;|&#160;/gi, " ")
+          .replace(/&amp;/gi, "&")
+          .replace(/\s+/g, " ").trim().slice(0, 220);
+        const scripts = [...html.matchAll(/<script[^>]+src=['"]([^'"]+)['"]/gi)].map((m) => m[1]).slice(0, 5);
+        log("servidor " + label + ": diagnóstico StreamWish HTTP title=" +
+          (titleMatch ? titleMatch[1].replace(/<[^>]+>/g, " ").trim().slice(0, 90) : "(sin title)") +
+          "; texto=" + (visibleStart || "(vacío)") +
+          "; scripts=" + (scripts.join(",") || "(inline/sin src)"));
+      }
       let streamUrl = media && media.url;
       if (!streamUrl) {
         const sources = [html].concat(unpackAll(html)).map(unescapePlayerText);
