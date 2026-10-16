@@ -1592,6 +1592,7 @@ async function resolveManual(embed, site, label, hint) {
     }
 
     if (host === "voe.sx" || host.endsWith(".voe.sx") || host === "voe.to" || host.endsWith(".voe.to") || hint === "voe") {
+      log("Megadede build=0.1.13; resolver Voe HTTP activo");
       log("servidor " + label + ": entra al resolvedor HTTP de Voe");
       const r = await kino.fetch(embed, { headers: { "User-Agent": headers["User-Agent"], Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", Referer: site.base + "/" }, timeoutMs: 12000 });
       if (!r.ok) { log("servidor " + label + ": VOE respondió HTTP " + r.status); return null; }
@@ -1758,7 +1759,8 @@ async function resolveManual(embed, site, label, hint) {
           const widgetAttrs = widgetMatch ? (widgetMatch[0].match(/\\b(?:challenge|challengeurl|name|algorithm|auto)\\s*=\\s*["'][^"']*["']/gi) || []).join(",").slice(0, 140) : "(sin widget)";
           const bodyPreview = text(html.replace(/<input\\b[^>]*>/gi, "<input>")).slice(0, 140);
           const challengeSummary = "algorithm=" + algorithm + ",keys=" + keys.join(",") + ",cost=" + String(challengeData.cost || "-") + ",keyLength=" + String(challengeData.keyLength || "-") + ",keyPrefixLen=" + String(challengeData.keyPrefix || "").length + ",outerKeys=" + Object.keys(cj).join(",");
-          log("servidor " + label + ": respuesta ALTCHA sin configuración (jsonScript=" + hasJsonScript + ", altcha=" + hasAltcha + ", csrf=" + hasCsrf + ", source=" + hasSource + ")");
+          if (/confirm.{0,30}human|verify.{0,30}human|human.{0,30}start the video/i.test(html)) log("servidor " + label + ": Voe sigue mostrando verificación humana; no hay configuración de video en esta respuesta");
+      log("servidor " + label + ": respuesta ALTCHA sin configuración (jsonScript=" + hasJsonScript + ", altcha=" + hasAltcha + ", csrf=" + hasCsrf + ", source=" + hasSource + ")");
           log("servidor " + label + ": diagnóstico POST Voe title=" + titleText + "; forms=" + formInfo + "; inputs=" + inputInfo.join("|") + "; buttons=" + buttonInfo.join("|") + "; widget=" + widgetAttrs + "; inicio=" + bodyPreview);
           log("servidor " + label + ": parámetros ALTCHA Voe " + challengeSummary);
         }
