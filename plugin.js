@@ -1640,7 +1640,8 @@ async function resolveManual(embed, site, label, hint) {
             }
           }
           if (!solution) { log("servidor " + label + ": desafío ALTCHA PBKDF2 no resuelto dentro del límite"); return null; }
-          solutionPayload = { challenge: challengeData, solution };
+          // Keep the complete server envelope, including the outer signature.
+          solutionPayload = { challenge: cj, solution };
           log("servidor " + label + ": ALTCHA PBKDF2 resuelto en " + solution.time + " ms");
         }
         const payloadB64 = btoa(unescape(encodeURIComponent(JSON.stringify(solutionPayload))));
