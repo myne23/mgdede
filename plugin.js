@@ -532,7 +532,7 @@ async function capture(server) {
 }
 
 export async function resolve(ref) {
-  log("Megadede plugin build=0.1.12 (Voe config extraction diagnostics)");
+  log("Megadede plugin build=0.1.13 (Voe config extraction diagnostics)");
   await null;
   const lazy = /^srv:(\d+):(mg:\/.*)$/.exec(String(ref));
   const epRef = lazy ? lazy[2] : String(ref);
