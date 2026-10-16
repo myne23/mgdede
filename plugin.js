@@ -532,7 +532,7 @@ async function capture(server) {
 }
 
 export async function resolve(ref) {
-  log("Megadede plugin build=0.1.14 (StreamWish HTTP redirect diagnostics)");
+  log("Megadede plugin build=0.1.15 (StreamWish loading-shell fast fallback)");
   await null;
   const lazy = /^srv:(\d+):(mg:\/.*)$/.exec(String(ref));
   const epRef = lazy ? lazy[2] : String(ref);
@@ -1094,6 +1094,13 @@ async function resolveStreamwishDirect(embed, site, label, headers) {
       }
       const finalTarget = response.url || currentTarget;
       const html = response.text();
+      // The short StreamWish domains may return a JS-only loading shell rather than media.
+      // Do not keep probing aliases when the page explicitly requires its browser-side app.
+      if (/Page is loading, please wait/i.test(html) && /<script[^>]+src=['"][^'"]*main\.js(?:\?[^'"]*)?['"]/i.test(html)) {
+        log("servidor " + label + ": StreamWish devolvió una pantalla de carga JavaScript (" +
+          new URL(finalTarget).hostname + "); omito más alias HTTP y paso al fallback de navegador");
+        return null;
+      }
       let media = findHlsKeyMedia(html, finalTarget, "streamwish") || findDirectMedia(html);
       if (!media && html.length < 3000) {
         const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
