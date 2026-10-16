@@ -1,7 +1,7 @@
 {
   "id": "megadede",
   "name": "Megadede",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "apiVersion": 6,
   "entry": "plugin.js",
   "description": "Películas, series y animes en español de Megadede. Inicio con tres listas, búsqueda, temporadas y capítulos. No pide cuenta.",
@@ -56,7 +56,17 @@
     "n1mwq.org",
     "*.n1mwq.org",
     "strp2p.com",
-    "*.strp2p.com"
+    "*.strp2p.com",
+    "kravaxxa.com",
+    "*.kravaxxa.com",
+    "davioad.com",
+    "*.davioad.com",
+    "haxloppd.com",
+    "*.haxloppd.com",
+    "tryzendm.com",
+    "*.tryzendm.com",
+    "dumbalag.com",
+    "*.dumbalag.com"
   ],
   "browser": true,
   "streamHosts": "any",
