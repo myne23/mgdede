@@ -1692,12 +1692,29 @@ async function resolveManual(embed, site, label, hint) {
             try { const actionUrl = new URL(actionMatch ? actionMatch[1] : realUrl, realUrl); actionPath = actionUrl.host + actionUrl.pathname; } catch {}
             return (methodMatch ? methodMatch[1].toUpperCase() : "GET") + " " + actionPath;
           }).join(";") || "(sin form)";
-          const inputNames = Array.from(html.matchAll(/<input\b[^>]*\bname=["']([^"']+)["'][^>]*>/gi), (m) => m[1]).slice(0, 10);
-          const widgetMatch = /<altcha-widget\b[^>]*>/i.exec(html);
-          const widgetAttrs = widgetMatch ? (widgetMatch[0].match(/\b(?:challenge|challengeurl|name|algorithm|auto)\s*=\s*["'][^"']*["']/gi) || []).join(",").slice(0, 140) : "(sin widget)";
-          const bodyPreview = text(html.replace(/<input\b[^>]*>/gi, "<input>")).slice(0, 140);
+          const inputTags = Array.from(html.matchAll(/<input\\b[^>]*>/gi), (m) => m[0]).slice(0, 10);
+          const inputInfo = inputTags.map((tag) => {
+            const name = /\\bname=["']([^"']+)["']/i.exec(tag);
+            const type = /\\btype=["']([^"']+)["']/i.exec(tag);
+            const value = /\\bvalue=["']([^"']*)["']/i.exec(tag);
+            const n = name ? name[1] : "(sin nombre)";
+            const v = /_token|altcha/i.test(n) ? "[oculto]" : (value ? decode(value[1]).slice(0, 30) : "(sin value)");
+            return n + ":" + (type ? type[1] : "text") + "=" + v;
+          });
+          const buttonTags = Array.from(html.matchAll(/<button\\b[^>]*>/gi), (m) => m[0]).slice(0, 4);
+          const buttonInfo = buttonTags.map((tag) => {
+            const name = /\\bname=["']([^"']+)["']/i.exec(tag);
+            const value = /\\bvalue=["']([^"']*)["']/i.exec(tag);
+            const onclick = /\\bonclick=["']([^"']*)["']/i.exec(tag);
+            return "name=" + (name ? name[1] : "-") + ",value=" + (value ? decode(value[1]).slice(0, 24) : "-") + ",onclick=" + (onclick ? decode(onclick[1]).slice(0, 50) : "-");
+          });
+          const widgetMatch = /<altcha-widget\\b[^>]*>/i.exec(html);
+          const widgetAttrs = widgetMatch ? (widgetMatch[0].match(/\\b(?:challenge|challengeurl|name|algorithm|auto)\\s*=\\s*["'][^"']*["']/gi) || []).join(",").slice(0, 140) : "(sin widget)";
+          const bodyPreview = text(html.replace(/<input\\b[^>]*>/gi, "<input>")).slice(0, 140);
+          const challengeSummary = "algorithm=" + algorithm + ",keys=" + keys.join(",") + ",cost=" + String(challengeData.cost || "-") + ",keyLength=" + String(challengeData.keyLength || "-") + ",keyPrefixLen=" + String(challengeData.keyPrefix || "").length + ",outerKeys=" + Object.keys(cj).join(",");
           log("servidor " + label + ": respuesta ALTCHA sin configuración (jsonScript=" + hasJsonScript + ", altcha=" + hasAltcha + ", csrf=" + hasCsrf + ", source=" + hasSource + ")");
-          log("servidor " + label + ": diagnóstico POST Voe title=" + titleText + "; forms=" + formInfo + "; inputs=" + inputNames.join(",") + "; widget=" + widgetAttrs + "; inicio=" + bodyPreview);
+          log("servidor " + label + ": diagnóstico POST Voe title=" + titleText + "; forms=" + formInfo + "; inputs=" + inputInfo.join("|") + "; buttons=" + buttonInfo.join("|") + "; widget=" + widgetAttrs + "; inicio=" + bodyPreview);
+          log("servidor " + label + ": parámetros ALTCHA Voe " + challengeSummary);
         }
       }
       if (!encoded) { log("servidor " + label + ": VOE no entregó configuración tras la consulta"); return null; }
