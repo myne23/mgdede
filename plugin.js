@@ -661,6 +661,32 @@ function decodeVoeConfig(encoded) {
     return "";
   }
 }
+function extractVoeSource(decoded) {
+  const value = String(decoded || "").trim();
+  if (!value) return "";
+  const visit = (node, depth) => {
+    if (depth > 8 || node == null) return "";
+    if (Array.isArray(node)) {
+      for (const item of node) { const found = visit(item, depth + 1); if (found) return found; }
+      return "";
+    }
+    if (typeof node === "object") {
+      for (const [key, item] of Object.entries(node)) {
+        if (key.toLowerCase() === "source" && typeof item === "string" && /^https?:\/\//i.test(item.replace(/\\u0026/gi, "&").replace(/\\\//g, "/"))) return item;
+        const found = visit(item, depth + 1);
+        if (found) return found;
+      }
+    }
+    return "";
+  };
+  try {
+    const found = visit(JSON.parse(value), 0);
+    if (found) return found;
+  } catch {}
+  const match = /"source"\s*:\s*"((?:\\.|[^"\\])+)"/.exec(value);
+  return match ? match[1] : "";
+}
+
 function parseOkruPlayerOptions(html) {
   const tags = String(html || "").match(/<[^>]+\bdata-options\s*=\s*(?:"[\s\S]*?"|'[\s\S]*?')[^>]*>/gi) || [];
   for (const tag of tags) {
@@ -1738,9 +1764,9 @@ async function resolveManual(embed, site, label, hint) {
       }
       if (!encoded) { log("servidor " + label + ": VOE no entregó configuración tras la consulta"); return null; }
       const decoded = decodeVoeConfig(encoded);
-      const source = /"source"\s*:\s*"([^"]+)"/.exec(decoded);
-      if (!source || !source[1]) { log("servidor " + label + ": configuración VOE no contiene source reconocible"); return null; }
-      const streamUrl = source[1].replace(/\\u0026/g, "&").replace(/\\\//g, "/");
+      const source = extractVoeSource(decoded);
+      if (!source) { log("servidor " + label + ": configuración VOE no contiene source reconocible"); return null; }
+      const streamUrl = source.replace(/\\u0026/g, "&").replace(/\\\//g, "/").replace(/&amp;/g, "&");
       log("servidor " + label + ": URL de VOE resuelta directamente");
       return directStream(streamUrl, label + " · " + site.name, embed, /\.m3u8/i.test(streamUrl) ? "application/x-mpegURL" : undefined);
     }
