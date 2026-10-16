@@ -10,7 +10,7 @@ No pide cuenta ni ajustes.
 
 Cada página de Megadede trae servidores directos (`changeServer(...)`) y una página `/vidurl/` (Embed69) que esconde los links reales detrás de una prueba de trabajo (SHA-256) y cifrado AES-256-CBC. El plugin resuelve las dos cosas por su cuenta:
 
-- Elige el mejor idioma disponible: **LAT**, después **ESP** y después **SUB**. Cada servidor se muestra con su idioma ("Vidhide lat", "Voe sub"...).
+- Elige el mejor idioma disponible: **LAT**, después **ESP** y después **SUB**. Cada servidor se muestra con su idioma (por ejemplo, "Vidhide lat" o "StreamWish sub").
 - Prueba primero los resolvers directos por HTTP: Vidhide (lista `hls4`/`hls2`/`hls3`) y StreamWish. Voe está deshabilitado y se omite sin intentar abrirlo.
 - Si un servidor compatible no se deja leer por HTTP, usa el navegador oculto de Kino como respaldo (necesita Kino 0.9.50 o más nuevo). Voe no se muestra como alternativa ni se intenta resolver.
 - Los demás servidores quedan en el menú "Servidor" y solo se resuelven si los eliges.
