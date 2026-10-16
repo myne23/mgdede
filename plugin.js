@@ -957,6 +957,120 @@ function findHlsKeyMedia(html, embed, hint) {
   return candidates[0] || null;
 }
 
+// StreamWish/hglink: the public short-link page can be only a redirect shell.
+// Query the current player domains directly, unpack its Packer script, and read links.hls4/hls3/etc.
+async function resolveStreamwishDirect(embed, site, label, headers) {
+  let input;
+  try { input = new URL(embed); } catch { return null; }
+  const redirectHosts = ["kravaxxa.com", "davioad.com", "haxloppd.com", "tryzendm.com", "dumbalag.com"];
+  const host = input.hostname.toLowerCase();
+  const targets = [];
+  const addTarget = (url) => { if (!targets.includes(url)) targets.push(url); };
+  if (host === "hglink.to" || host.endsWith(".hglink.to") || host === "dhcplay.com" || host === "test.hglink.to") {
+    for (const targetHost of redirectHosts) {
+      const target = new URL(input.href);
+      target.hostname = targetHost;
+      addTarget(target.href);
+    }
+  }
+  addTarget(input.href);
+
+  const packedLink = (source) => {
+    const text = unescapePlayerText(String(source || ""));
+    const re = /(?:var|let|const)\s+links\s*=\s*(\{[\s\S]*?\})\s*;/ig;
+    let m;
+    while ((m = re.exec(text))) {
+      const objectText = m[1];
+      try {
+        const obj = JSON.parse(objectText);
+        for (const key of ["hls4", "hls3", "hls1", "hls2", "hls", "mp4"]) {
+          if (typeof obj[key] === "string" && obj[key].trim()) return obj[key].trim();
+        }
+      } catch {}
+      for (const key of ["hls4", "hls3", "hls1", "hls2", "hls", "mp4"]) {
+        const value = new RegExp("(?:['\"]?)" + key + "(?:['\"]?)\\s*:\\s*(['\"])(.*?)\\1", "i").exec(objectText);
+        if (value && value[2]) return unescapePlayerText(value[2]).trim();
+      }
+    }
+    // Some current variants omit the links variable name but still expose the HLS key.
+    const loose = /(?:['"]?)(?:hls4|hls3|hls1|hls2)(?:['"]?)\s*:\s*(['"])(.*?)\1/i.exec(text);
+    return loose && loose[2] ? unescapePlayerText(loose[2]).trim() : "";
+  };
+
+  for (let i = 0; i < targets.length; i++) {
+    const target = targets[i];
+    let response;
+    try {
+      response = await kino.fetch(target, {
+        headers: { "User-Agent": headers["User-Agent"], Accept: "*/*", Referer: target },
+        timeoutMs: 10000
+      });
+    } catch (e) {
+      log("servidor " + label + ": StreamWish HTTP falló en dominio alternativo " + new URL(target).hostname);
+      continue;
+    }
+    if (!response.ok) {
+      log("servidor " + label + ": StreamWish " + new URL(target).hostname + " respondió HTTP " + response.status);
+      continue;
+    }
+    const html = response.text();
+    let media = findHlsKeyMedia(html, target, "streamwish") || findDirectMedia(html);
+    let streamUrl = media && media.url;
+    if (!streamUrl) {
+      const sources = [html].concat(unpackAll(html)).map(unescapePlayerText);
+      for (const source of sources) {
+        const value = packedLink(source);
+        if (!value) continue;
+        try {
+          const candidate = new URL(value, target);
+          if (candidate.protocol === "https:" && /\.(?:m3u8|mp4)(?:$|[?#])/i.test(candidate.href)) {
+            streamUrl = candidate.href;
+            break;
+          }
+        } catch {}
+      }
+    }
+    if (!streamUrl) {
+      log("servidor " + label + ": StreamWish " + new URL(target).hostname + " sin links HLS/MP4 reconocibles (HTML " + html.length + " caracteres)");
+      continue;
+    }
+
+    let finalUrl = streamUrl;
+    const mime = /\.m3u8(?:$|[?#])/i.test(finalUrl) ? "application/x-mpegURL" : "video/mp4";
+    // If this is a master manifest, select the highest advertised resolution; if not, keep the valid direct URL.
+    if (/\.m3u8(?:$|[?#])/i.test(finalUrl)) {
+      try {
+        const playlistResponse = await kino.fetch(finalUrl, {
+          headers: { "User-Agent": headers["User-Agent"], Accept: "*/*", Referer: target },
+          timeoutMs: 8000
+        });
+        if (playlistResponse.ok) {
+          const playlist = playlistResponse.text();
+          const lines = playlist.split(/\r?\n/);
+          let bestUrl = "", bestScore = -1;
+          for (let j = 0; j < lines.length - 1; j++) {
+            const resolution = /RESOLUTION=(\d+)x(\d+)/i.exec(lines[j]);
+            if (!resolution) continue;
+            let next = lines[j + 1].trim();
+            if (!next || next.startsWith("#")) continue;
+            try {
+              next = new URL(next, finalUrl).href;
+              const score = Number(resolution[1]) * Number(resolution[2]);
+              if (score > bestScore) { bestScore = score; bestUrl = next; }
+            } catch {}
+          }
+          if (bestUrl) finalUrl = bestUrl;
+        }
+      } catch {}
+    }
+    log("servidor " + label + ": StreamWish resuelto por HTTP directo en " + new URL(target).hostname +
+      " (" + (/\.m3u8(?:$|[?#])/i.test(finalUrl) ? "HLS" : "MP4") + ")");
+    return directStream(finalUrl, label + " · " + site.name, target, mime);
+  }
+  log("servidor " + label + ": no se encontró una fuente directa de StreamWish tras probar " + targets.length + " URL(s)");
+  return null;
+}
+
 async function resolvePageMedia(embed, site, label, headers, hint) {
   const started = Date.now();
   let response;
@@ -1263,9 +1377,13 @@ async function resolveManual(embed, site, label, hint) {
       return await resolvePageMedia(embed, site, label, headers);
     }
 
+    if (hint === "streamwish" || /(?:^|\.)(?:hglink\.to|streamwish\.com|streamwish\.to|embedwish\.com|hlswish\.com)$/.test(host)) {
+      return await resolveStreamwishDirect(embed, site, label, headers);
+    }
+
     if (host === "vidhidepro.com" || host.endsWith(".vidhidepro.com") ||
         host === "embedwish.com" || host.endsWith(".embedwish.com") ||
-        hint === "vidhide" || hint === "streamwish") {
+        hint === "vidhide") {
       return await resolvePageMedia(embed, site, label, headers, hint);
     }
 
@@ -1455,34 +1573,75 @@ async function resolveManual(embed, site, label, hint) {
         const challenge = /<altcha-widget[^>]+challenge=["']([^"']+)["']/.exec(html);
         if (!csrf || !challenge) { log("servidor " + label + ": VOE no expuso configuración directa ni desafío ALTCHA compatible"); return null; }
         const challengeUrl = new URL(challenge[1], realUrl).href;
-        const cr = await kino.fetch(challengeUrl, { headers: { "User-Agent": headers["User-Agent"], Referer: realUrl }, timeoutMs: 15000 });
+        const cr = await kino.fetch(challengeUrl, { headers: { "User-Agent": headers["User-Agent"], Accept: "application/json,*/*", Referer: realUrl }, timeoutMs: 15000 });
         if (!cr.ok) { log("servidor " + label + ": desafío VOE respondió HTTP " + cr.status); return null; }
-        const cj = cr.json();
-        const algorithm = String(cj.algorithm || "").toLowerCase().replace(/-/g, "");
-        const cost = Number(cj.cost), keyLength = Number(cj.keyLength);
-        const keyPrefix = String(cj.keyPrefix || ""), nonce = String(cj.nonce || ""), salt = String(cj.salt || "");
-        if (!algorithm.includes("sha256") || !Number.isInteger(cost) || cost < 1 || cost > 100000 ||
-            !Number.isInteger(keyLength) || keyLength < 1 || keyLength > 64 ||
-            !/^[a-f0-9]+$/i.test(nonce) || !/^[a-f0-9]+$/i.test(salt) || !keyPrefix) {
-          log("servidor " + label + ": parámetros ALTCHA no compatibles (algoritmo=" + algorithm + ", cost=" + cost + ", keyLength=" + keyLength + ", nonce=" + !!nonce + ", salt=" + !!salt + ", prefix=" + !!keyPrefix + ")");
+        let cj;
+        try { cj = cr.json(); } catch { cj = null; }
+        if (!cj || typeof cj !== "object") {
+          log("servidor " + label + ": respuesta ALTCHA no es JSON");
           return null;
         }
+        const challengeData = cj.data && typeof cj.data === "object" ? cj.data :
+          (cj.challenge && typeof cj.challenge === "object" ? cj.challenge : cj);
+        const keys = Object.keys(challengeData);
+        const algorithm = String(challengeData.algorithm || "").toLowerCase().replace(/[-_]/g, "");
         const started = Date.now();
-        let solution = null;
-        for (let counter = 0; counter < 1000000 && Date.now() - started < 22000; counter++) {
-          const counterHex = counter.toString(16).padStart(8, "0");
-          const derived = kino.crypto.pbkdf2("sha256", nonce + counterHex, salt, cost, keyLength, {
-            inputEncoding: "hex", outputEncoding: "hex",
-          });
-          if (derived.startsWith(keyPrefix.toLowerCase())) {
-            solution = { counter, derivedKey: derived, time: Date.now() - started };
-            break;
+        let solutionPayload = null;
+
+        // ALTCHA standard challenge: SHA-256(salt + number) must equal challenge,
+        // with the signed solution posted back as the base64-encoded "altcha" form field.
+        const maxnumber = Number(challengeData.maxnumber);
+        const standardChallenge = String(challengeData.challenge || "");
+        const standardSalt = String(challengeData.salt || "");
+        const signature = String(challengeData.signature || "");
+        if (algorithm === "sha256" && /^[a-f0-9]{32,128}$/i.test(standardChallenge) &&
+            standardSalt && signature && Number.isFinite(maxnumber) && maxnumber >= 0 && maxnumber <= 2000000) {
+          for (let number = 0; number <= maxnumber && Date.now() - started < 22000; number++) {
+            const digest = kino.crypto.hash("sha256", standardSalt + number);
+            if (String(digest).toLowerCase() === standardChallenge.toLowerCase()) {
+              solutionPayload = {
+                algorithm: challengeData.algorithm || "SHA-256",
+                challenge: standardChallenge,
+                number,
+                salt: standardSalt,
+                signature,
+                took: Date.now() - started
+              };
+              break;
+            }
+            if ((number & 255) === 255 && Date.now() - started > 22000) break;
           }
+          if (!solutionPayload) {
+            log("servidor " + label + ": ALTCHA estándar no resuelto (maxnumber=" + maxnumber + ", claves=" + keys.join(",") + ")");
+            return null;
+          }
+          log("servidor " + label + ": ALTCHA estándar resuelto en " + solutionPayload.took + " ms");
+        } else {
+          // Keep support for the legacy custom PBKDF2 challenge used by older VOE pages.
+          const cost = Number(challengeData.cost), keyLength = Number(challengeData.keyLength);
+          const keyPrefix = String(challengeData.keyPrefix || ""), nonce = String(challengeData.nonce || ""), salt = String(challengeData.salt || "");
+          if (!algorithm.includes("sha256") || !Number.isInteger(cost) || cost < 1 || cost > 100000 ||
+              !Number.isInteger(keyLength) || keyLength < 1 || keyLength > 64 ||
+              !/^[a-f0-9]+$/i.test(nonce) || !/^[a-f0-9]+$/i.test(salt) || !keyPrefix) {
+            log("servidor " + label + ": ALTCHA no reconocido (claves=" + keys.join(",") + "; algoritmo=" + algorithm + "; cost=" + cost + "; keyLength=" + keyLength + ")");
+            return null;
+          }
+          let solution = null;
+          for (let counter = 0; counter < 1000000 && Date.now() - started < 22000; counter++) {
+            const counterHex = counter.toString(16).padStart(8, "0");
+            const derived = kino.crypto.pbkdf2("sha256", nonce + counterHex, salt, cost, keyLength, {
+              inputEncoding: "hex", outputEncoding: "hex",
+            });
+            if (derived.startsWith(keyPrefix.toLowerCase())) {
+              solution = { counter, derivedKey: derived, time: Date.now() - started };
+              break;
+            }
+          }
+          if (!solution) { log("servidor " + label + ": desafío ALTCHA PBKDF2 no resuelto dentro del límite"); return null; }
+          solutionPayload = { challenge: challengeData, solution };
+          log("servidor " + label + ": ALTCHA PBKDF2 resuelto en " + solution.time + " ms");
         }
-        if (!solution) { log("servidor " + label + ": desafío ALTCHA de VOE no resuelto dentro del límite"); return null; }
-        log("servidor " + label + ": ALTCHA resuelto en " + solution.time + " ms; envío el resultado");
-        const payload = { challenge: cj, solution };
-        const payloadB64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+        const payloadB64 = btoa(unescape(encodeURIComponent(JSON.stringify(solutionPayload))));
         const origin = new URL(realUrl).origin;
         const posted = await kino.fetch(realUrl, {
           method: "POST",
