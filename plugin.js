@@ -433,7 +433,7 @@ async function embed69Servers(vidUrl) {
 // Every server of a page: the changeServer('...') buttons plus Embed69's. Kept for a while so that
 // choosing another server later doesn't repeat the proof-of-work.
 async function collectServers(path) {
-  const cacheKey = "srv:v2:" + path;
+  const cacheKey = "srv:v3:" + path;
   try {
     const cached = JSON.parse(kino.storage.get(cacheKey) || "null");
     if (Array.isArray(cached) && cached.length) return cached;
@@ -467,6 +467,12 @@ async function collectServers(path) {
     try {
       host = new URL(u).hostname.replace(/^www\./i, "");
     } catch {
+      continue;
+    }
+    // embed69.org is the intermediary player page, not a video host.
+    // Its actual providers are extracted from the /vidurl/ page above.
+    if (host === "embed69.org" || host.endsWith(".embed69.org")) {
+      log("Embed69: se omite la página del reproductor como servidor independiente");
       continue;
     }
     if (/^https:\/\//i.test(u)) servers.push({ name: host, lang: "", url: u });
