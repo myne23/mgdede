@@ -1044,75 +1044,113 @@ async function resolveStreamwishDirect(embed, site, label, headers) {
     return loose && loose[2] ? unescapePlayerText(loose[2]).trim() : "";
   };
 
-  for (let i = 0; i < targets.length; i++) {
-    const target = targets[i];
-    let response;
-    try {
-      response = await kino.fetch(target, {
-        headers: { "User-Agent": headers["User-Agent"], Accept: "*/*", Referer: target },
-        timeoutMs: 10000
-      });
-    } catch (e) {
-      log("servidor " + label + ": StreamWish HTTP falló en dominio alternativo " + new URL(target).hostname);
-      continue;
-    }
-    if (!response.ok) {
-      log("servidor " + label + ": StreamWish " + new URL(target).hostname + " respondió HTTP " + response.status);
-      continue;
-    }
-    const html = response.text();
-    let media = findHlsKeyMedia(html, target, "streamwish") || findDirectMedia(html);
-    let streamUrl = media && media.url;
-    if (!streamUrl) {
-      const sources = [html].concat(unpackAll(html)).map(unescapePlayerText);
-      for (const source of sources) {
-        const value = packedLink(source);
-        if (!value) continue;
+  const allowedRedirectHost = (hostname) => {
+    const h = String(hostname || "").toLowerCase();
+    return ["hglink.to", "streamwish.to", "streamwish.com", "embedwish.com", "hlswish.com", ...redirectHosts]
+      .some((base) => h === base || h.endsWith("." + base));
+  };
+  const navigationTargets = (html, baseUrl) => {
+    const source = unescapePlayerText(String(html || "")).replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    const found = [];
+    const patterns = [
+      /<iframe\b[^>]*\bsrc\s*=\s*(['"])(.*?)\1/gi,
+      /<meta\b[^>]*http-equiv\s*=\s*(['"])refresh\1[^>]*content\s*=\s*(['"])[^'"]*?url\s*=\s*([^'";]+)[^'"]*\2/gi,
+      /(?:window\s*\.\s*location(?:\s*\.\s*(?:href|replace|assign))?|document\s*\.\s*location(?:\s*\.\s*href)?)\s*(?:=|\()\s*['"]([^'"]+)['"]/gi,
+      /(?:window\s*\.\s*open)\s*\(\s*['"]([^'"]+)['"]/gi
+    ];
+    for (let pi = 0; pi < patterns.length; pi++) {
+      const re = patterns[pi];
+      let m;
+      while ((m = re.exec(source))) {
+        const raw = pi === 1 ? m[3] : (pi === 0 ? m[2] : m[1]);
+        if (!raw || /^(?:javascript:|data:|about:|#)/i.test(raw.trim())) continue;
         try {
-          const candidate = new URL(value, target);
-          if (candidate.protocol === "https:" && /\.(?:m3u8|mp4)(?:$|[?#])/i.test(candidate.href)) {
-            streamUrl = candidate.href;
-            break;
-          }
+          const u = new URL(raw.trim().replace(/&amp;/g, "&"), baseUrl);
+          if (u.protocol === "https:" && allowedRedirectHost(u.hostname)) found.push(u.href);
         } catch {}
       }
     }
-    if (!streamUrl) {
-      log("servidor " + label + ": StreamWish " + new URL(target).hostname + " sin links HLS/MP4 reconocibles (HTML " + html.length + " caracteres)");
-      continue;
-    }
+    return [...new Set(found)];
+  };
 
-    let finalUrl = streamUrl;
-    const mime = /\.m3u8(?:$|[?#])/i.test(finalUrl) ? "application/x-mpegURL" : "video/mp4";
-    // If this is a master manifest, select the highest advertised resolution; if not, keep the valid direct URL.
-    if (/\.m3u8(?:$|[?#])/i.test(finalUrl)) {
+  for (let i = 0; i < targets.length; i++) {
+    let currentTarget = targets[i];
+    const visited = new Set();
+    for (let hop = 0; hop < 3 && currentTarget && !visited.has(currentTarget); hop++) {
+      visited.add(currentTarget);
+      let response;
       try {
-        const playlistResponse = await kino.fetch(finalUrl, {
-          headers: { "User-Agent": headers["User-Agent"], Accept: "*/*", Referer: target },
-          timeoutMs: 8000
+        response = await kino.fetch(currentTarget, {
+          headers: { "User-Agent": headers["User-Agent"], Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", Referer: hop === 0 ? embed : (Array.from(visited).slice(-2)[0] || embed) },
+          timeoutMs: 10000
         });
-        if (playlistResponse.ok) {
-          const playlist = playlistResponse.text();
-          const lines = playlist.split(/\r?\n/);
-          let bestUrl = "", bestScore = -1;
-          for (let j = 0; j < lines.length - 1; j++) {
-            const resolution = /RESOLUTION=(\d+)x(\d+)/i.exec(lines[j]);
-            if (!resolution) continue;
-            let next = lines[j + 1].trim();
-            if (!next || next.startsWith("#")) continue;
-            try {
-              next = new URL(next, finalUrl).href;
-              const score = Number(resolution[1]) * Number(resolution[2]);
-              if (score > bestScore) { bestScore = score; bestUrl = next; }
-            } catch {}
-          }
-          if (bestUrl) finalUrl = bestUrl;
+      } catch (e) {
+        if (hop === 0) log("servidor " + label + ": StreamWish HTTP falló en dominio alternativo " + new URL(currentTarget).hostname);
+        break;
+      }
+      if (!response.ok) {
+        if (hop === 0) log("servidor " + label + ": StreamWish " + new URL(currentTarget).hostname + " respondió HTTP " + response.status);
+        break;
+      }
+      const finalTarget = response.url || currentTarget;
+      const html = response.text();
+      let media = findHlsKeyMedia(html, finalTarget, "streamwish") || findDirectMedia(html);
+      let streamUrl = media && media.url;
+      if (!streamUrl) {
+        const sources = [html].concat(unpackAll(html)).map(unescapePlayerText);
+        for (const source of sources) {
+          const value = packedLink(source);
+          if (!value) continue;
+          try {
+            const candidate = new URL(value, finalTarget);
+            if (candidate.protocol === "https:" && /\.(?:m3u8|mp4)(?:$|[?#])/i.test(candidate.href)) {
+              streamUrl = candidate.href;
+              break;
+            }
+          } catch {}
         }
-      } catch {}
+      }
+      if (streamUrl) {
+        let finalUrl = streamUrl;
+        const mime = /\.m3u8(?:$|[?#])/i.test(finalUrl) ? "application/x-mpegURL" : "video/mp4";
+        if (/\.m3u8(?:$|[?#])/i.test(finalUrl)) {
+          try {
+            const playlistResponse = await kino.fetch(finalUrl, {
+              headers: { "User-Agent": headers["User-Agent"], Accept: "*/*", Referer: finalTarget },
+              timeoutMs: 8000
+            });
+            if (playlistResponse.ok) {
+              const playlist = playlistResponse.text();
+              const lines = playlist.split(/\r?\n/);
+              let bestUrl = "", bestScore = -1;
+              for (let j = 0; j < lines.length - 1; j++) {
+                const resolution = /RESOLUTION=(\d+)x(\d+)/i.exec(lines[j]);
+                if (!resolution) continue;
+                let next = lines[j + 1].trim();
+                if (!next || next.startsWith("#")) continue;
+                try {
+                  next = new URL(next, finalUrl).href;
+                  const score = Number(resolution[1]) * Number(resolution[2]);
+                  if (score > bestScore) { bestScore = score; bestUrl = next; }
+                } catch {}
+              }
+              if (bestUrl) finalUrl = bestUrl;
+            }
+          } catch {}
+        }
+        log("servidor " + label + ": StreamWish resuelto por HTTP directo en " + new URL(finalTarget).hostname +
+          " (" + (/\.m3u8(?:$|[?#])/i.test(finalUrl) ? "HLS" : "MP4") + ")");
+        return directStream(finalUrl, label + " · " + site.name, finalTarget, mime);
+      }
+      const nav = navigationTargets(html, finalTarget).filter((u) => !visited.has(u));
+      if (!nav.length) {
+        log("servidor " + label + ": StreamWish " + new URL(finalTarget).hostname +
+          " sin links HLS/MP4 ni redirección HTML reconocible (HTML " + html.length +
+          ", tipo=" + (response.headers["content-type"] || "desconocido") + ")");
+        break;
+      }
+      currentTarget = nav[0];
     }
-    log("servidor " + label + ": StreamWish resuelto por HTTP directo en " + new URL(target).hostname +
-      " (" + (/\.m3u8(?:$|[?#])/i.test(finalUrl) ? "HLS" : "MP4") + ")");
-    return directStream(finalUrl, label + " · " + site.name, target, mime);
   }
   log("servidor " + label + ": no se encontró una fuente directa de StreamWish tras probar " + targets.length + " URL(s)");
   return null;
