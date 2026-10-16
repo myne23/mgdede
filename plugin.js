@@ -1143,31 +1143,8 @@ async function resolveStreamwishDirect(embed, site, label, headers) {
       if (streamUrl) {
         let finalUrl = streamUrl;
         const mime = /\.m3u8(?:$|[?#])/i.test(finalUrl) ? "application/x-mpegURL" : "video/mp4";
-        if (/\.m3u8(?:$|[?#])/i.test(finalUrl)) {
-          try {
-            const playlistResponse = await kino.fetch(finalUrl, {
-              headers: { "User-Agent": headers["User-Agent"], Accept: "*/*", Referer: finalTarget },
-              timeoutMs: 8000
-            });
-            if (playlistResponse.ok) {
-              const playlist = playlistResponse.text();
-              const lines = playlist.split(/\r?\n/);
-              let bestUrl = "", bestScore = -1;
-              for (let j = 0; j < lines.length - 1; j++) {
-                const resolution = /RESOLUTION=(\d+)x(\d+)/i.exec(lines[j]);
-                if (!resolution) continue;
-                let next = lines[j + 1].trim();
-                if (!next || next.startsWith("#")) continue;
-                try {
-                  next = new URL(next, finalUrl).href;
-                  const score = Number(resolution[1]) * Number(resolution[2]);
-                  if (score > bestScore) { bestScore = score; bestUrl = next; }
-                } catch {}
-              }
-              if (bestUrl) finalUrl = bestUrl;
-            }
-          } catch {}
-        }
+        // Conservar la playlist maestra HLS: Kino puede adaptar la resolución a la conexión.
+        // No sustituirla por una variante fija, aunque sea la de mayor resolución.
         log("servidor " + label + ": StreamWish resuelto por HTTP directo en " + new URL(finalTarget).hostname +
           " (" + (/\.m3u8(?:$|[?#])/i.test(finalUrl) ? "HLS" : "MP4") + ")");
         return directStream(finalUrl, label + " · " + site.name, finalTarget, mime);
@@ -1566,10 +1543,12 @@ async function resolveManual(embed, site, label, hint) {
       log("servidor " + label + ": metadatos OK.ru keys=" + JSON.stringify(metadataShape) + " hls=" + JSON.stringify(hlsFields) + " videos=" + JSON.stringify(videoSummary).slice(0, 1100));
       const rank = (v) => {
         const quality = String(v.name || v.quality || "").toLowerCase();
-        if (/1080|full/.test(quality)) return 0;
-        if (/720|hd/.test(quality)) return 1;
-        if (/480|sd/.test(quality)) return 2;
-        return 3;
+        const resolution = /(?:^|\\D)(4320|2160|1440|1080|960|720|540|480|360|240)(?:\\D|$)/.exec(quality);
+        if (resolution) return -Number(resolution[1]);
+        if (/full/.test(quality)) return -1080;
+        if (/hd/.test(quality)) return -720;
+        if (/sd/.test(quality)) return -480;
+        return 0;
       };
       const directVideo = (v) => typeof v.url === "string" && /^https:\/\//i.test(v.url) && /\.(?:mp4|webm)(?:[?#]|$)/i.test(v.url);
       videos.sort((a, b) => rank(a) - rank(b));
