@@ -1,7 +1,7 @@
 {
   "id": "megadede",
   "name": "Megadede",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "apiVersion": 6,
   "entry": "plugin.js",
   "description": "Películas, series y animes en español de Megadede. Inicio con tres listas, búsqueda, temporadas y capítulos. No pide cuenta.",
