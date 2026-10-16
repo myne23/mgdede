@@ -331,7 +331,8 @@ function displayLabel(server) {
 
 // Fast direct resolvers first (plain HTTP), the heavy ones (Voe's proof-of-work, Filemoon) later.
 function priority(key) {
-  return key === "streamwish" ? 0 : key === "vidhide" ? 1 : key === "voe" ? 2 : key === "filemoon" ? 4 : 3;
+  // Vidhide has a working direct HTTP resolver, so always try it before browser-based hosts.
+  return key === "vidhide" ? 0 : key === "streamwish" ? 1 : key === "voe" ? 2 : key === "filemoon" ? 4 : 3;
 }
 
 function orderServers(raw) {
@@ -340,7 +341,7 @@ function orderServers(raw) {
       const lr = LANG_ORDER.indexOf(String(s.lang || "").toUpperCase());
       return { name: s.name, lang: s.lang || "", url: s.url, key: serverKey(s.name), index, langRank: lr < 0 ? LANG_ORDER.length : lr };
     })
-    .sort((a, b) => a.langRank - b.langRank || priority(a.key) - priority(b.key) || a.index - b.index);
+    .sort((a, b) => priority(a.key) - priority(b.key) || a.langRank - b.langRank || a.index - b.index);
 }
 
 function b64ToHex(b64) {
@@ -493,24 +494,28 @@ async function capture(server) {
   const embed = server.url;
   if (!/^https:\/\//i.test(embed)) return null;
   const label = displayLabel(server);
-  log("servidor " + label + ": iniciando resolución HTTP directa (host=" + (() => { try { return new URL(embed).hostname; } catch { return "URL inválida"; } })() + ", clave=" + String(server.key || "") + ")");
-  const manual = await resolveManual(embed, SITE, label, server.key);
-  if (manual) {
-    log("servidor " + label + ": resolución directa completada; no se abre navegador");
-    return manual;
+  let host = "";
+  try { host = new URL(embed).hostname.toLowerCase(); } catch {}
+  const isVoe = server.key === "voe" || host === "voe.sx" || host.endsWith(".voe.sx") || host === "voe.to" || host.endsWith(".voe.to");
+
+  if (isVoe) {
+    // Voe often returns a human-verification interstitial to plain HTTP. Avoid spending
+    // several seconds probing it; let Kino's hidden browser handle the page normally.
+    log("servidor " + label + ": salto HTTP de Voe; pruebo directamente el navegador oculto");
+  } else {
+    log("servidor " + label + ": iniciando resolución HTTP directa (host=" + (host || "URL inválida") + ", clave=" + String(server.key || "") + ")");
+    const manual = await resolveManual(embed, SITE, label, server.key);
+    if (manual) {
+      log("servidor " + label + ": resolución directa completada; no se abre navegador");
+      return manual;
+    }
+    log("servidor " + label + ": resolución directa no obtuvo URL; evalúo fallback");
   }
-  log("servidor " + label + ": resolución directa no obtuvo URL; evalúo fallback");
-  try {
-    const host = new URL(embed).hostname.toLowerCase();
-    if (server.key === "voe" || host === "voe.sx" || host.endsWith(".voe.sx") || host === "voe.to" || host.endsWith(".voe.to")) {
-      log("servidor " + label + ": se omite navegador; falta resolver Voe por HTTP");
-      return null;
-    }
-    if (host === "strp2p.com" || host.endsWith(".strp2p.com")) {
-      log("servidor " + label + ": sp2p omite captura de navegador");
-      return null;
-    }
-  } catch {}
+
+  if (host === "strp2p.com" || host.endsWith(".strp2p.com")) {
+    log("servidor " + label + ": sp2p omite captura de navegador");
+    return null;
+  }
   let res;
   try {
     res = await kino.browser.capture(embed, { timeoutMs: CAPTURE_MS, headers: { Referer: SITE.base + "/" } });
@@ -521,7 +526,7 @@ async function capture(server) {
   const media = (res && res.media) || [];
   const pick = media.find((x) => /\.m3u8|mpegurl/i.test(x.url + " " + (x.mime || ""))) || media[0];
   if (!pick) {
-    log("servidor " + label + ": no se vio ningún video");
+    log("servidor " + label + ": el navegador no capturó ningún recurso multimedia");
     return null;
   }
   const hls = /\.m3u8|mpegurl/i.test(pick.url + " " + (pick.mime || ""));
@@ -532,7 +537,7 @@ async function capture(server) {
 }
 
 export async function resolve(ref) {
-  log("Megadede plugin build=0.1.15 (StreamWish loading-shell fast fallback)");
+  log("Megadede plugin build=0.1.16 (Vidhide first; Voe browser fallback)");
   await null;
   const lazy = /^srv:(\d+):(mg:\/.*)$/.exec(String(ref));
   const epRef = lazy ? lazy[2] : String(ref);
