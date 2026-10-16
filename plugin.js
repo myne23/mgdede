@@ -896,20 +896,42 @@ async function resolveSp2pApi(embed, site, label, headers) {
 // Vidhide / StreamWish players keep the playlist in the packed script as "hls4", "hls2" or "hls3".
 // A relative path is completed with the CDN Megadede's players use (Vidhide) or the embed's own host.
 function findHlsKeyMedia(html, embed, hint) {
-  const sources = [String(html || "")].concat(unpackAll(String(html || "")));
-  for (const key of ["hls4", "hls2", "hls3"]) {
-    const re = new RegExp("[\"']" + key + "[\"']\\s*:\\s*[\"']([^\"']+)[\"']");
+  const raw = String(html || "");
+  const sources = [raw].concat(unpackAll(raw)).map(unescapePlayerText);
+  // Las variantes de StreamWish/VidHide cambian el nombre de la propiedad del stream.
+  // Priorizar HLS y aceptar solo URLs que parezcan archivos multimedia.
+  const keys = ["hls4", "hls2", "hls3", "master", "playlist", "m3u8", "hls", "file", "source", "src", "url"];
+  const candidates = [];
+  const seen = new Set();
+  for (const key of keys) {
+    const re = new RegExp("['\\\"]" + key + "['\\\"]\\\\s*:\\\\s*['\\\"]([^'\\\"]+)['\\\"]", "gi");
     for (const src of sources) {
-      const m = re.exec(unescapePlayerText(src));
-      if (!m || !m[1]) continue;
-      let url = m[1].trim();
-      if (!/^https?:\/\//i.test(url)) {
-        try { url = new URL(url, hint === "vidhide" ? "https://morencius.com" : embed).href; } catch { continue; }
+      let m;
+      while ((m = re.exec(src))) {
+        let value = String(m[1] || "").replace(/\\\\u0026/gi, "&").replace(/\\\\\\//g, "/").trim();
+        if (!value || /^(?:blob:|data:|javascript:)/i.test(value)) continue;
+        let url;
+        try {
+          url = /^https?:\\/\\//i.test(value)
+            ? new URL(value)
+            : new URL(value, hint === "vidhide" ? "https://morencius.com" : embed);
+        } catch { continue; }
+        if (url.protocol !== "https:") continue;
+        const path = url.pathname.toLowerCase();
+        const hls = /\\.m3u8$/i.test(path) || /^(?:hls4|hls2|hls3)$/.test(key);
+        const dash = /\\.mpd$/i.test(path);
+        const direct = /\\.(?:mp4|webm)$/i.test(path);
+        if (!hls && !dash && !direct) continue;
+        if (seen.has(url.href)) continue;
+        seen.add(url.href);
+        const score = (hls ? 100 : dash ? 40 : 10) +
+          (/master/i.test(path) ? 30 : 0) + (/playlist|index|manifest/i.test(path) ? 10 : 0);
+        candidates.push({ url: url.href, hls, dash, score });
       }
-      if (/^https:\/\//i.test(url)) return { url, hls: true, dash: false, score: 1000 };
     }
   }
-  return null;
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0] || null;
 }
 
 async function resolvePageMedia(embed, site, label, headers, hint) {
@@ -1383,27 +1405,33 @@ async function resolveManual(embed, site, label, hint) {
 
     if (host === "voe.sx" || host.endsWith(".voe.sx") || hint === "voe") {
       const r = await kino.fetch(embed, { headers: { "User-Agent": headers["User-Agent"] } });
-      if (!r.ok) return null;
+      if (!r.ok) { log("servidor " + label + ": VOE respondió HTTP " + r.status); return null; }
       let html = r.text();
       let realUrl = embed;
       const redirect = /window\.location\.href\s*=\s*['"]([^'"]+\/e\/[^'"]+)['"]/.exec(html);
       if (redirect && redirect[1]) {
         realUrl = new URL(redirect[1], embed).href;
         const rr = await kino.fetch(realUrl, { headers: { "User-Agent": headers["User-Agent"] } });
-        if (!rr.ok) return null;
+        if (!rr.ok) { log("servidor " + label + ": redirección VOE respondió HTTP " + rr.status); return null; }
         html = rr.text();
       }
       let config = /<script[^>]+type=["']application\/json["'][^>]*>\s*(?:\[\s*)?["']([^"']+)["']/.exec(html);
       let encoded = config && config[1];
       if (!encoded) {
+        const direct = findDirectMedia(html);
+        if (direct) {
+          log("servidor " + label + ": URL de VOE encontrada en HTML sin decodificar");
+          return directStream(direct.url, label + " · " + site.name, realUrl,
+            direct.hls ? "application/x-mpegURL" : direct.dash ? "application/dash+xml" : "video/mp4");
+        }
         // Some VOE pages protect the source with ALTCHA proof-of-work. Solve the bounded challenge
         // directly; if the challenge is unsupported or too expensive, use Kino's browser fallback.
         const csrf = /name=["']_token["'][^>]+value=["']([^"']+)["']/.exec(html);
         const challenge = /<altcha-widget[^>]+challenge=["']([^"']+)["']/.exec(html);
-        if (!csrf || !challenge) return null;
+        if (!csrf || !challenge) { log("servidor " + label + ": VOE no expuso configuración directa ni desafío ALTCHA compatible"); return null; }
         const challengeUrl = new URL(challenge[1], realUrl).href;
         const cr = await kino.fetch(challengeUrl, { headers: { "User-Agent": headers["User-Agent"], Referer: realUrl }, timeoutMs: 15000 });
-        if (!cr.ok) return null;
+        if (!cr.ok) { log("servidor " + label + ": desafío VOE respondió HTTP " + cr.status); return null; }
         const cj = cr.json();
         const algorithm = String(cj.algorithm || "").toLowerCase().replace(/-/g, "");
         const cost = Number(cj.cost), keyLength = Number(cj.keyLength);
@@ -1423,7 +1451,7 @@ async function resolveManual(embed, site, label, hint) {
             break;
           }
         }
-        if (!solution) return null;
+        if (!solution) { log("servidor " + label + ": desafío ALTCHA de VOE no resuelto dentro del límite"); return null; }
         const payload = { challenge: cj, solution };
         const payloadB64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
         const origin = new URL(realUrl).origin;
@@ -1436,15 +1464,15 @@ async function resolveManual(embed, site, label, hint) {
           body: { form: { _token: csrf[1], access: "0", altcha: payloadB64 } },
           timeoutMs: 15000,
         });
-        if (!posted.ok) return null;
+        if (!posted.ok) { log("servidor " + label + ": envío ALTCHA de VOE respondió HTTP " + posted.status); return null; }
         html = posted.text();
         config = /<script[^>]+type=["']application\/json["'][^>]*>\s*\[\s*["']([^"']+)["']\s*\]\s*<\/script>/i.exec(html);
         encoded = config && config[1];
       }
-      if (!encoded) return null;
+      if (!encoded) { log("servidor " + label + ": VOE no entregó configuración tras la consulta"); return null; }
       const decoded = decodeVoeConfig(encoded);
       const source = /"source"\s*:\s*"([^"]+)"/.exec(decoded);
-      if (!source || !source[1]) return null;
+      if (!source || !source[1]) { log("servidor " + label + ": configuración VOE no contiene source reconocible"); return null; }
       const streamUrl = source[1].replace(/\\u0026/g, "&").replace(/\\\//g, "/");
       log("servidor " + label + ": URL de VOE resuelta directamente");
       return directStream(streamUrl, label + " · " + site.name, embed, /\.m3u8/i.test(streamUrl) ? "application/x-mpegURL" : undefined);
@@ -1461,7 +1489,7 @@ async function resolveManual(embed, site, label, hint) {
       return directStream(streamUrl, label + " · " + site.name, embed, /\.m3u8/i.test(streamUrl) ? "application/x-mpegURL" : "video/mp4");
     }
   } catch (e) {
-    log("servidor " + label + ": resolver manual no disponible; pruebo navegador");
+    log("servidor " + label + ": resolver manual falló (" + String((e && (e.code || e.message)) || e).slice(0, 120) + "); pruebo navegador");
   }
   return null;
 }
