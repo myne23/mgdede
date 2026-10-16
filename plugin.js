@@ -493,8 +493,13 @@ async function capture(server) {
   const embed = server.url;
   if (!/^https:\/\//i.test(embed)) return null;
   const label = displayLabel(server);
+  log("servidor " + label + ": iniciando resolución HTTP directa (host=" + (() => { try { return new URL(embed).hostname; } catch { return "URL inválida"; } })() + ", clave=" + String(server.key || "") + ")");
   const manual = await resolveManual(embed, SITE, label, server.key);
-  if (manual) return manual;
+  if (manual) {
+    log("servidor " + label + ": resolución directa completada; no se abre navegador");
+    return manual;
+  }
+  log("servidor " + label + ": resolución directa no obtuvo URL; evalúo fallback");
   try {
     const host = new URL(embed).hostname.toLowerCase();
     if (host === "strp2p.com" || host.endsWith(".strp2p.com")) {
@@ -1417,10 +1422,12 @@ async function resolveManual(embed, site, label, hint) {
       return null;
     }
 
-    if (host === "voe.sx" || host.endsWith(".voe.sx") || hint === "voe") {
-      const r = await kino.fetch(embed, { headers: { "User-Agent": headers["User-Agent"] } });
+    if (host === "voe.sx" || host.endsWith(".voe.sx") || host === "voe.to" || host.endsWith(".voe.to") || hint === "voe") {
+      log("servidor " + label + ": entra al resolvedor HTTP de Voe");
+      const r = await kino.fetch(embed, { headers: { "User-Agent": headers["User-Agent"], Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", Referer: site.base + "/" }, timeoutMs: 12000 });
       if (!r.ok) { log("servidor " + label + ": VOE respondió HTTP " + r.status); return null; }
       let html = r.text();
+      log("servidor " + label + ": respuesta HTTP de Voe recibida (" + html.length + " caracteres)");
       let realUrl = embed;
       const redirect = /window\.location\.href\s*=\s*['"]([^'"]+\/e\/[^'"]+)['"]/.exec(html);
       if (redirect && redirect[1]) {
@@ -1452,7 +1459,10 @@ async function resolveManual(embed, site, label, hint) {
         const keyPrefix = String(cj.keyPrefix || ""), nonce = String(cj.nonce || ""), salt = String(cj.salt || "");
         if (!algorithm.includes("sha256") || !Number.isInteger(cost) || cost < 1 || cost > 100000 ||
             !Number.isInteger(keyLength) || keyLength < 1 || keyLength > 64 ||
-            !/^[a-f0-9]+$/i.test(nonce) || !/^[a-f0-9]+$/i.test(salt) || !keyPrefix) return null;
+            !/^[a-f0-9]+$/i.test(nonce) || !/^[a-f0-9]+$/i.test(salt) || !keyPrefix) {
+          log("servidor " + label + ": parámetros ALTCHA no compatibles (algoritmo=" + algorithm + ", cost=" + cost + ", keyLength=" + keyLength + ", nonce=" + !!nonce + ", salt=" + !!salt + ", prefix=" + !!keyPrefix + ")");
+          return null;
+        }
         const started = Date.now();
         let solution = null;
         for (let counter = 0; counter < 1000000 && Date.now() - started < 22000; counter++) {
@@ -1466,6 +1476,7 @@ async function resolveManual(embed, site, label, hint) {
           }
         }
         if (!solution) { log("servidor " + label + ": desafío ALTCHA de VOE no resuelto dentro del límite"); return null; }
+        log("servidor " + label + ": ALTCHA resuelto en " + solution.time + " ms; envío el resultado");
         const payload = { challenge: cj, solution };
         const payloadB64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
         const origin = new URL(realUrl).origin;
