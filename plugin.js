@@ -502,6 +502,10 @@ async function capture(server) {
   log("servidor " + label + ": resolución directa no obtuvo URL; evalúo fallback");
   try {
     const host = new URL(embed).hostname.toLowerCase();
+    if (server.key === "voe" || host === "voe.sx" || host.endsWith(".voe.sx") || host === "voe.to" || host.endsWith(".voe.to")) {
+      log("servidor " + label + ": se omite navegador; falta resolver Voe por HTTP");
+      return null;
+    }
     if (host === "strp2p.com" || host.endsWith(".strp2p.com")) {
       log("servidor " + label + ": sp2p omite captura de navegador");
       return null;
