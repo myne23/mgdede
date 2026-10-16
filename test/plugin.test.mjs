@@ -220,7 +220,7 @@ test("resolve: Voe is ignored without browser capture or being requested", async
   await withKino({ [BASE + "/pelicula/test-abc"]: "<h1>x</h1>changeServer('https://voe.sx/e/zz')" }, async (plugin, { captured, asked }) => {
     await assert.rejects(plugin.resolve("mg:/pelicula/test-abc"), (e) => e.code === "not_found");
     assert.deepEqual(captured, []);
-    assert.ok(!asked.some((a) => /voe\\.sx/i.test(a)));
+    assert.ok(!asked.some((a) => /voe\.sx/i.test(a)));
   });
 });
 
