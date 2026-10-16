@@ -1671,7 +1671,22 @@ async function resolveManual(embed, site, label, hint) {
           const hasAltcha = /altcha-widget|name=["']altcha["']/i.test(html);
           const hasCsrf = /name=["']_token["']/i.test(html);
           const hasSource = /["']source["']\s*:/i.test(html);
+          const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+          const titleText = titleMatch ? text(titleMatch[1]).slice(0, 60) : "(sin título)";
+          const formTags = html.match(/<form\b[^>]*>/gi) || [];
+          const formInfo = formTags.slice(0, 2).map((tag) => {
+            const actionMatch = /\baction=["']([^"']*)["']/i.exec(tag);
+            const methodMatch = /\bmethod=["']([^"']*)["']/i.exec(tag);
+            let actionPath = "/";
+            try { const actionUrl = new URL(actionMatch ? actionMatch[1] : realUrl, realUrl); actionPath = actionUrl.host + actionUrl.pathname; } catch {}
+            return (methodMatch ? methodMatch[1].toUpperCase() : "GET") + " " + actionPath;
+          }).join(";") || "(sin form)";
+          const inputNames = Array.from(html.matchAll(/<input\b[^>]*\bname=["']([^"']+)["'][^>]*>/gi), (m) => m[1]).slice(0, 10);
+          const widgetMatch = /<altcha-widget\b[^>]*>/i.exec(html);
+          const widgetAttrs = widgetMatch ? (widgetMatch[0].match(/\b(?:challenge|challengeurl|name|algorithm|auto)\s*=\s*["'][^"']*["']/gi) || []).join(",").slice(0, 140) : "(sin widget)";
+          const bodyPreview = text(html.replace(/<input\b[^>]*>/gi, "<input>")).slice(0, 140);
           log("servidor " + label + ": respuesta ALTCHA sin configuración (jsonScript=" + hasJsonScript + ", altcha=" + hasAltcha + ", csrf=" + hasCsrf + ", source=" + hasSource + ")");
+          log("servidor " + label + ": diagnóstico POST Voe title=" + titleText + "; forms=" + formInfo + "; inputs=" + inputNames.join(",") + "; widget=" + widgetAttrs + "; inicio=" + bodyPreview);
         }
       }
       if (!encoded) { log("servidor " + label + ": VOE no entregó configuración tras la consulta"); return null; }
