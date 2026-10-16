@@ -1656,8 +1656,22 @@ async function resolveManual(embed, site, label, hint) {
         });
         if (!posted.ok) { log("servidor " + label + ": envío ALTCHA de VOE respondió HTTP " + posted.status); return null; }
         html = posted.text();
+        log("servidor " + label + ": respuesta posterior a ALTCHA HTTP " + posted.status + " (" + html.length + " caracteres)");
+        const postDirect = findDirectMedia(html);
+        if (postDirect) {
+          log("servidor " + label + ": respuesta ALTCHA contiene una URL multimedia directa");
+          return directStream(postDirect.url, label + " · " + site.name, realUrl,
+            postDirect.hls ? "application/x-mpegURL" : postDirect.dash ? "application/dash+xml" : "video/mp4");
+        }
         config = /<script[^>]+type=["']application\/json["'][^>]*>\s*\[\s*["']([^"']+)["']\s*\]\s*<\/script>/i.exec(html);
         encoded = config && config[1];
+        if (!encoded) {
+          const hasJsonScript = /<script[^>]+type=["']application\/json/i.test(html);
+          const hasAltcha = /altcha-widget|name=["']altcha["']/i.test(html);
+          const hasCsrf = /name=["']_token["']/i.test(html);
+          const hasSource = /["']source["']\s*:/i.test(html);
+          log("servidor " + label + ": respuesta ALTCHA sin configuración (jsonScript=" + hasJsonScript + ", altcha=" + hasAltcha + ", csrf=" + hasCsrf + ", source=" + hasSource + ")");
+        }
       }
       if (!encoded) { log("servidor " + label + ": VOE no entregó configuración tras la consulta"); return null; }
       const decoded = decodeVoeConfig(encoded);
