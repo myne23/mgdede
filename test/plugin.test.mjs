@@ -188,12 +188,11 @@ test("resolve: opens Embed69, prefers Latin Spanish, reads Vidhide's relative pl
     assert.equal(s.mime, "application/x-mpegURL");
     assert.match(s.label, /^Vidhide lat/);
     assert.deepEqual(captured, []); // resolved over HTTP, no hidden browser
-    // order after Vidhide LAT: Voe LAT, StreamWish SUB, the direct StreamWish (language unknown)
-    assert.deepEqual(s.alternatives.map((a) => a.label), ["Voe lat", "Streamwish sub", "Streamwish"]);
+    // Voe is omitted; only StreamWish alternatives remain after Vidhide.
+    assert.deepEqual(s.alternatives.map((a) => a.label), ["Streamwish sub", "Streamwish"]);
     assert.deepEqual(s.alternatives.map((a) => a.ref), [
       "srv:1:mg:/pelicula/test-abc",
       "srv:2:mg:/pelicula/test-abc",
-      "srv:3:mg:/pelicula/test-abc",
     ]);
   });
 });
@@ -201,7 +200,7 @@ test("resolve: opens Embed69, prefers Latin Spanish, reads Vidhide's relative pl
 test("resolve: a lazy copy resolves its own server, and the server list is kept (one Embed69 visit)", async () => {
   await withKino({}, async (plugin, { asked }) => {
     await plugin.resolve("mg:/pelicula/test-abc");
-    const lazy = await plugin.resolve("srv:2:mg:/pelicula/test-abc"); // Streamwish SUB
+    const lazy = await plugin.resolve("srv:1:mg:/pelicula/test-abc"); // Streamwish SUB
     assert.equal(lazy.url, "https://cdn.example/sw/master.m3u8");
     assert.match(lazy.label, /^Streamwish sub/);
     assert.equal(asked.filter((a) => a.includes("/vidurl/")).length, 1);
@@ -217,9 +216,11 @@ test("resolve: falls back to the hidden browser when a server can't be read dire
   });
 });
 
-test("resolve fails with a message for the person when no server gives video", async () => {
-  await withKino({ [BASE + "/pelicula/test-abc"]: "<h1>x</h1>changeServer('https://voe.sx/e/zz')" }, async (plugin) => {
-    await assert.rejects(plugin.resolve("mg:/pelicula/test-abc"), (e) => e.code === "unavailable" && /servidor/.test(e.userMessage));
+test("resolve: Voe is ignored without browser capture or being requested", async () => {
+  await withKino({ [BASE + "/pelicula/test-abc"]: "<h1>x</h1>changeServer('https://voe.sx/e/zz')" }, async (plugin, { captured, asked }) => {
+    await assert.rejects(plugin.resolve("mg:/pelicula/test-abc"), (e) => e.code === "not_found");
+    assert.deepEqual(captured, []);
+    assert.ok(!asked.some((a) => /voe\\.sx/i.test(a)));
   });
 });
 
