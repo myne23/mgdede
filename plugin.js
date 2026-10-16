@@ -1581,19 +1581,21 @@ async function resolveManual(embed, site, label, hint) {
           log("servidor " + label + ": respuesta ALTCHA no es JSON");
           return null;
         }
-        const challengeData = cj.data && typeof cj.data === "object" ? cj.data :
-          (cj.challenge && typeof cj.challenge === "object" ? cj.challenge : cj);
+        // VOE's endpoint wraps the ALTCHA parameters in {parameters, signature}.
+        // Preserve the outer signature when building the standard ALTCHA solution.
+        const challengeData = cj.parameters && typeof cj.parameters === "object" ? cj.parameters :
+          (cj.data && typeof cj.data === "object" ? cj.data :
+          (cj.challenge && typeof cj.challenge === "object" ? cj.challenge : cj));
         const keys = Object.keys(challengeData);
         const algorithm = String(challengeData.algorithm || "").toLowerCase().replace(/[-_]/g, "");
         const started = Date.now();
         let solutionPayload = null;
 
-        // ALTCHA standard challenge: SHA-256(salt + number) must equal challenge,
-        // with the signed solution posted back as the base64-encoded "altcha" form field.
+        // ALTCHA standard challenge: SHA-256(salt + number) must equal challenge.
         const maxnumber = Number(challengeData.maxnumber);
         const standardChallenge = String(challengeData.challenge || "");
         const standardSalt = String(challengeData.salt || "");
-        const signature = String(challengeData.signature || "");
+        const signature = String(challengeData.signature || cj.signature || "");
         if (algorithm === "sha256" && /^[a-f0-9]{32,128}$/i.test(standardChallenge) &&
             standardSalt && signature && Number.isFinite(maxnumber) && maxnumber >= 0 && maxnumber <= 2000000) {
           for (let number = 0; number <= maxnumber && Date.now() - started < 22000; number++) {
@@ -1623,7 +1625,7 @@ async function resolveManual(embed, site, label, hint) {
           if (!algorithm.includes("sha256") || !Number.isInteger(cost) || cost < 1 || cost > 100000 ||
               !Number.isInteger(keyLength) || keyLength < 1 || keyLength > 64 ||
               !/^[a-f0-9]+$/i.test(nonce) || !/^[a-f0-9]+$/i.test(salt) || !keyPrefix) {
-            log("servidor " + label + ": ALTCHA no reconocido (claves=" + keys.join(",") + "; algoritmo=" + algorithm + "; cost=" + cost + "; keyLength=" + keyLength + ")");
+            log("servidor " + label + ": ALTCHA no reconocido (claves=" + keys.join(",") + "; algoritmo=" + algorithm + "; cost=" + cost + "; keyLength=" + keyLength + "; parámetros=" + Object.keys(cj.parameters || {}).join(",") + ")");
             return null;
           }
           let solution = null;
