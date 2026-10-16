@@ -904,23 +904,23 @@ function findHlsKeyMedia(html, embed, hint) {
   const candidates = [];
   const seen = new Set();
   for (const key of keys) {
-    const re = new RegExp("['\\\"]" + key + "['\\\"]\\\\s*:\\\\s*['\\\"]([^'\\\"]+)['\\\"]", "gi");
+    const re = new RegExp("['\"]" + key + "['\"]\\s*:\\s*['\"]([^'\"]+)['\"]", "gi");
     for (const src of sources) {
       let m;
       while ((m = re.exec(src))) {
-        let value = String(m[1] || "").replace(/\\\\u0026/gi, "&").replace(/\\\\\\//g, "/").trim();
+        const value = String(m[1] || "").trim();
         if (!value || /^(?:blob:|data:|javascript:)/i.test(value)) continue;
         let url;
         try {
-          url = /^https?:\\/\\//i.test(value)
+          url = /^https?:\/\//i.test(value)
             ? new URL(value)
             : new URL(value, hint === "vidhide" ? "https://morencius.com" : embed);
         } catch { continue; }
         if (url.protocol !== "https:") continue;
         const path = url.pathname.toLowerCase();
-        const hls = /\\.m3u8$/i.test(path) || /^(?:hls4|hls2|hls3)$/.test(key);
-        const dash = /\\.mpd$/i.test(path);
-        const direct = /\\.(?:mp4|webm)$/i.test(path);
+        const hls = /\.m3u8$/i.test(path) || /^(?:hls4|hls2|hls3)$/.test(key);
+        const dash = /\.mpd$/i.test(path);
+        const direct = /\.(?:mp4|webm)$/i.test(path);
         if (!hls && !dash && !direct) continue;
         if (seen.has(url.href)) continue;
         seen.add(url.href);
