@@ -311,7 +311,9 @@ function serverKey(name) {
   const n = String(name || "").toLowerCase();
   if (/voe/.test(n)) return "voe";
   if (/vidhide|vhide/.test(n)) return "vidhide";
-  if (/wish/.test(n)) return "streamwish";
+  // Megadede's StreamWish links often arrive through hglink.to rather than a
+  // hostname containing "wish"; classify the alias by the server name/host.
+  if (/stream.?wish|embedwish|hglink|hlswish|wish/.test(n)) return "streamwish";
   if (/filemoon|fmoon|byse/.test(n)) return "filemoon";
   return n;
 }
@@ -431,7 +433,7 @@ async function embed69Servers(vidUrl) {
 // Every server of a page: the changeServer('...') buttons plus Embed69's. Kept for a while so that
 // choosing another server later doesn't repeat the proof-of-work.
 async function collectServers(path) {
-  const cacheKey = "srv:" + path;
+  const cacheKey = "srv:v2:" + path;
   try {
     const cached = JSON.parse(kino.storage.get(cacheKey) || "null");
     if (Array.isArray(cached) && cached.length) return cached;
@@ -447,13 +449,18 @@ async function collectServers(path) {
   const re = /changeServer\(\s*['"]([^'"]+)['"]/gi;
   let m;
   while ((m = re.exec(html))) add(m[1]);
-  const vid = first(/<iframe[^>]+src=["']([^"']*\/vidurl\/[^"']+)["']/i, html);
+  // The site has used both src and data-src, with different iframe attribute orders.
+  const vid = first(/<(?:iframe|embed)\b[^>]*(?:src|data-src)\s*=\s*["']([^"']*\/vidurl\/[^"']+)["'][^>]*>/i, html)
+    || first(/(?:src|data-src)\s*=\s*["']([^"']*\/vidurl\/[^"']+)["']/i, html);
   if (vid) add(vid);
 
   const servers = [];
+  let embed69Count = 0;
   for (const u of urls) {
     if (/\/vidurl\//i.test(u)) {
-      for (const s of await embed69Servers(u)) servers.push(s);
+      const expanded = await embed69Servers(u);
+      embed69Count += expanded.length;
+      for (const s of expanded) servers.push(s);
       continue;
     }
     let host = "";
@@ -471,6 +478,7 @@ async function collectServers(path) {
       // the list just isn't kept
     }
   }
+  log("servidores detectados: " + servers.length + " total; " + embed69Count + " desde Embed69");
   return servers;
 }
 
