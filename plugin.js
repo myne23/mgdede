@@ -6,7 +6,7 @@
 // The site shows the video through embedded players. Every page lists some servers directly
 // (changeServer('...')) and one "/vidurl/" page (Embed69) that hides the real links behind a small
 // proof-of-work and AES encryption. resolve() reads both, picks the best language (LAT > ESP > SUB),
-// tries the fast direct resolvers first (StreamWish, Vidhide, Voe...), then Kino's hidden browser
+// tries the fast direct resolvers first (Vidhide, StreamWish), then Kino's hidden browser
 // (kino.browser.capture), and lists the remaining servers as labelled lazy copies.
 //
 // Refs: movie "mg:/pelicula/slug-xxxx"  series "mg:/serie/slug-xxxx" or "mg:/anime/slug-xxxx"
@@ -329,10 +329,9 @@ function displayLabel(server) {
   return (base + " " + langLabel(server.lang)).trim();
 }
 
-// Fast direct resolvers first (plain HTTP), the heavy ones (Voe's proof-of-work, Filemoon) later.
+// Voe is intentionally disabled; Vidhide and StreamWish are prioritized.
 function priority(key) {
-  // Vidhide has a working direct HTTP resolver, so always try it before browser-based hosts.
-  return key === "vidhide" ? 0 : key === "streamwish" ? 1 : key === "voe" ? 2 : key === "filemoon" ? 4 : 3;
+  return key === "vidhide" ? 0 : key === "streamwish" ? 1 : key === "filemoon" ? 4 : 3;
 }
 
 function orderServers(raw) {
@@ -434,7 +433,7 @@ async function embed69Servers(vidUrl) {
 // Every server of a page: the changeServer('...') buttons plus Embed69's. Kept for a while so that
 // choosing another server later doesn't repeat the proof-of-work.
 async function collectServers(path) {
-  const cacheKey = "srv:v3:" + path;
+  const cacheKey = "srv:v4:" + path;
   try {
     const cached = JSON.parse(kino.storage.get(cacheKey) || "null");
     if (Array.isArray(cached) && cached.length) return cached;
@@ -478,6 +477,10 @@ async function collectServers(path) {
     }
     if (/^https:\/\//i.test(u)) servers.push({ name: host, lang: "", url: u });
   }
+  // Voe is disabled: never resolve it or expose it as a lazy alternative.
+  for (let i = servers.length - 1; i >= 0; i--) {
+    if (serverKey(servers[i].name) === "voe" || serverKey(servers[i].url) === "voe") servers.splice(i, 1);
+  }
   if (servers.length) {
     try {
       kino.storage.set(cacheKey, JSON.stringify(servers), { ttlMs: SERVER_CACHE_MS });
@@ -485,7 +488,7 @@ async function collectServers(path) {
       // the list just isn't kept
     }
   }
-  log("servidores detectados: " + servers.length + " total; " + embed69Count + " desde Embed69");
+  log("servidores detectados: " + servers.length + " total; " + embed69Count + " desde Embed69; Voe omitido");
   return servers;
 }
 
@@ -499,9 +502,8 @@ async function capture(server) {
   const isVoe = server.key === "voe" || host === "voe.sx" || host.endsWith(".voe.sx") || host === "voe.to" || host.endsWith(".voe.to");
 
   if (isVoe) {
-    // Voe often returns a human-verification interstitial to plain HTTP. Avoid spending
-    // several seconds probing it; let Kino's hidden browser handle the page normally.
-    log("servidor " + label + ": salto HTTP de Voe; pruebo directamente el navegador oculto");
+    log("servidor " + label + ": Voe deshabilitado; se omite sin hacer peticiones");
+    return null;
   } else {
     log("servidor " + label + ": iniciando resolución HTTP directa (host=" + (host || "URL inválida") + ", clave=" + String(server.key || "") + ")");
     const manual = await resolveManual(embed, SITE, label, server.key);
@@ -537,7 +539,7 @@ async function capture(server) {
 }
 
 export async function resolve(ref) {
-  log("Megadede plugin build=0.1.16 (Vidhide first; Voe browser fallback)");
+  log("Megadede plugin build=0.1.17 (Voe disabled; Vidhide and StreamWish prioritized)");
   await null;
   const lazy = /^srv:(\d+):(mg:\/.*)$/.exec(String(ref));
   const epRef = lazy ? lazy[2] : String(ref);
