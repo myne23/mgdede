@@ -329,7 +329,7 @@ function displayLabel(server) {
   return (base + " " + langLabel(server.lang)).trim();
 }
 
-// Voe is intentionally disabled; Vidhide and StreamWish are prioritized.
+// Keep Voe available after the two preferred sources, before slower fallbacks.
 function priority(key) {
   return key === "vidhide" ? 0 : key === "streamwish" ? 1 : key === "filemoon" ? 4 : 3;
 }
