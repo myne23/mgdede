@@ -529,7 +529,7 @@ async function capture(server) {
 }
 
 export async function resolve(ref) {
-  log("Megadede plugin build=0.1.22-test (Voe HTTP enabled; Vidhide and StreamWish prioritized)");
+  log("Megadede plugin build=0.1.24-test (Voe HTTP enabled; Vidhide and StreamWish prioritized)");
   await null;
   const lazy = /^srv:(\d+):(mg:\/.*)$/.exec(String(ref));
   const epRef = lazy ? lazy[2] : String(ref);
@@ -1650,7 +1650,7 @@ async function resolveManual(embed, site, label, hint) {
     }
 
     if (host === "voe.sx" || host.endsWith(".voe.sx") || host === "voe.to" || host.endsWith(".voe.to") || hint === "voe") {
-      log("Megadede build=0.1.22-test; resolver Voe HTTP activo");
+      log("Megadede build=0.1.24-test; resolver Voe HTTP activo");
       log("servidor " + label + ": entra al resolvedor HTTP de Voe");
       const r = await kino.fetch(embed, { headers: { "User-Agent": headers["User-Agent"] }, timeoutMs: 12000 });
       if (!r.ok) { log("servidor " + label + ": VOE respondió HTTP " + r.status); return null; }
@@ -1747,7 +1747,11 @@ async function resolveManual(embed, site, label, hint) {
           }
           if (!solution) { log("servidor " + label + ": desafío ALTCHA PBKDF2 no resuelto dentro del límite"); return null; }
           // Keep the complete server envelope, including the outer signature.
-          solutionPayload = { challenge: cj, solution };
+          // VOE wraps parameters and signature in an envelope. Flatten the challenge
+          // fields for the ALTCHA payload, while retaining the server signature.
+          const flatChallenge = Object.assign({}, challengeData);
+          if (cj.signature && !flatChallenge.signature) flatChallenge.signature = cj.signature;
+          solutionPayload = { challenge: flatChallenge, solution };
           log("servidor " + label + ": ALTCHA PBKDF2 resuelto en " + solution.time + " ms");
         }
         const payloadB64 = btoa(unescape(encodeURIComponent(JSON.stringify(solutionPayload))));
