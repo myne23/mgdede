@@ -1751,18 +1751,14 @@ async function resolveManual(embed, site, label, hint) {
           log("servidor " + label + ": ALTCHA PBKDF2 resuelto en " + solution.time + " ms");
         }
         const payloadB64 = btoa(unescape(encodeURIComponent(JSON.stringify(solutionPayload))));
-        // ALTCHA may be served from a separate anti-bot host. Submit to the form's actual
-        // action, not blindly to the original Voe URL; the response HTML exposes that action.
-        const formTag = /<form\b[^>]*>/i.exec(html);
-        const formAction = formTag && /\baction=["']([^"']*)["']/i.exec(formTag[0]);
-        let postUrl = realUrl;
-        try {
-          if (formAction && formAction[1]) postUrl = new URL(formAction[1], realUrl).href;
-        } catch {}
-        let origin = new URL(postUrl).origin;
+        // Use the same successful flow as Donghuas Sub ES: submit the solved ALTCHA
+        // back to the VOE embed URL. The form action can point at an anti-bot challenge host;
+        // posting there returns the human-verification page again instead of unlocking the player.
+        const postUrl = realUrl;
+        const origin = new URL(realUrl).origin;
         let postHostPath = "/";
         try { const postU = new URL(postUrl); postHostPath = postU.host + postU.pathname; } catch {}
-        log("servidor " + label + ": destino POST ALTCHA=" + postHostPath);
+        log("servidor " + label + ": destino POST ALTCHA=" + postHostPath + " (embed VOE)");
         const posted = await kino.fetch(postUrl, {
           method: "POST",
           headers: {
