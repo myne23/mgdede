@@ -433,7 +433,7 @@ async function embed69Servers(vidUrl) {
 // Every server of a page: the changeServer('...') buttons plus Embed69's. Kept for a while so that
 // choosing another server later doesn't repeat the proof-of-work.
 async function collectServers(path) {
-  const cacheKey = "srv:v4:" + path;
+  const cacheKey = "srv:v5:" + path;
   try {
     const cached = JSON.parse(kino.storage.get(cacheKey) || "null");
     if (Array.isArray(cached) && cached.length) return cached;
@@ -477,10 +477,6 @@ async function collectServers(path) {
     }
     if (/^https:\/\//i.test(u)) servers.push({ name: host, lang: "", url: u });
   }
-  // Voe is disabled: never resolve it or expose it as a lazy alternative.
-  for (let i = servers.length - 1; i >= 0; i--) {
-    if (serverKey(servers[i].name) === "voe" || serverKey(servers[i].url) === "voe") servers.splice(i, 1);
-  }
   if (servers.length) {
     try {
       kino.storage.set(cacheKey, JSON.stringify(servers), { ttlMs: SERVER_CACHE_MS });
@@ -488,7 +484,7 @@ async function collectServers(path) {
       // the list just isn't kept
     }
   }
-  log("servidores detectados: " + servers.length + " total; " + embed69Count + " desde Embed69; Voe omitido");
+  log("servidores detectados: " + servers.length + " total; " + embed69Count + " desde Embed69; Voe habilitado");
   return servers;
 }
 
@@ -501,18 +497,13 @@ async function capture(server) {
   try { host = new URL(embed).hostname.toLowerCase(); } catch {}
   const isVoe = server.key === "voe" || host === "voe.sx" || host.endsWith(".voe.sx") || host === "voe.to" || host.endsWith(".voe.to");
 
-  if (isVoe) {
-    log("servidor " + label + ": Voe deshabilitado; se omite sin hacer peticiones");
-    return null;
-  } else {
-    log("servidor " + label + ": iniciando resolución HTTP directa (host=" + (host || "URL inválida") + ", clave=" + String(server.key || "") + ")");
-    const manual = await resolveManual(embed, SITE, label, server.key);
-    if (manual) {
-      log("servidor " + label + ": resolución directa completada; no se abre navegador");
-      return manual;
-    }
-    log("servidor " + label + ": resolución directa no obtuvo URL; evalúo fallback");
+  log("servidor " + label + ": iniciando resolución HTTP directa (host=" + (host || "URL inválida") + ", clave=" + String(server.key || "") + ")");
+  const manual = await resolveManual(embed, SITE, label, server.key);
+  if (manual) {
+    log("servidor " + label + ": resolución directa completada; no se abre navegador");
+    return manual;
   }
+  log("servidor " + label + ": resolución directa no obtuvo URL; evalúo fallback");
 
   if (host === "strp2p.com" || host.endsWith(".strp2p.com")) {
     log("servidor " + label + ": sp2p omite captura de navegador");
@@ -539,7 +530,7 @@ async function capture(server) {
 }
 
 export async function resolve(ref) {
-  log("Megadede plugin build=0.1.17 (Voe disabled; Vidhide and StreamWish prioritized)");
+  log("Megadede plugin build=0.1.20-test (Voe HTTP enabled; Vidhide and StreamWish prioritized)");
   await null;
   const lazy = /^srv:(\d+):(mg:\/.*)$/.exec(String(ref));
   const epRef = lazy ? lazy[2] : String(ref);
@@ -1763,8 +1754,8 @@ async function resolveManual(embed, site, label, hint) {
         const payloadB64 = btoa(unescape(encodeURIComponent(JSON.stringify(solutionPayload))));
         // ALTCHA may be served from a separate anti-bot host. Submit to the form's actual
         // action, not blindly to the original Voe URL; the response HTML exposes that action.
-        const formTag = /<form\\b[^>]*>/i.exec(html);
-        const formAction = formTag && /\\baction=["']([^"']*)["']/i.exec(formTag[0]);
+        const formTag = /<form\b[^>]*>/i.exec(html);
+        const formAction = formTag && /\baction=["']([^"']*)["']/i.exec(formTag[0]);
         let postUrl = realUrl;
         try {
           if (formAction && formAction[1]) postUrl = new URL(formAction[1], realUrl).href;
@@ -1807,25 +1798,25 @@ async function resolveManual(embed, site, label, hint) {
             try { const actionUrl = new URL(actionMatch ? actionMatch[1] : realUrl, realUrl); actionPath = actionUrl.host + actionUrl.pathname; } catch {}
             return (methodMatch ? methodMatch[1].toUpperCase() : "GET") + " " + actionPath;
           }).join(";") || "(sin form)";
-          const inputTags = Array.from(html.matchAll(/<input\\b[^>]*>/gi), (m) => m[0]).slice(0, 10);
+          const inputTags = Array.from(html.matchAll(/<input\b[^>]*>/gi), (m) => m[0]).slice(0, 10);
           const inputInfo = inputTags.map((tag) => {
-            const name = /\\bname=["']([^"']+)["']/i.exec(tag);
-            const type = /\\btype=["']([^"']+)["']/i.exec(tag);
-            const value = /\\bvalue=["']([^"']*)["']/i.exec(tag);
+            const name = /\bname=["']([^"']+)["']/i.exec(tag);
+            const type = /\btype=["']([^"']+)["']/i.exec(tag);
+            const value = /\bvalue=["']([^"']*)["']/i.exec(tag);
             const n = name ? name[1] : "(sin nombre)";
             const v = /_token|altcha/i.test(n) ? "[oculto]" : (value ? decode(value[1]).slice(0, 30) : "(sin value)");
             return n + ":" + (type ? type[1] : "text") + "=" + v;
           });
-          const buttonTags = Array.from(html.matchAll(/<button\\b[^>]*>/gi), (m) => m[0]).slice(0, 4);
+          const buttonTags = Array.from(html.matchAll(/<button\b[^>]*>/gi), (m) => m[0]).slice(0, 4);
           const buttonInfo = buttonTags.map((tag) => {
-            const name = /\\bname=["']([^"']+)["']/i.exec(tag);
-            const value = /\\bvalue=["']([^"']*)["']/i.exec(tag);
-            const onclick = /\\bonclick=["']([^"']*)["']/i.exec(tag);
+            const name = /\bname=["']([^"']+)["']/i.exec(tag);
+            const value = /\bvalue=["']([^"']*)["']/i.exec(tag);
+            const onclick = /\bonclick=["']([^"']*)["']/i.exec(tag);
             return "name=" + (name ? name[1] : "-") + ",value=" + (value ? decode(value[1]).slice(0, 24) : "-") + ",onclick=" + (onclick ? decode(onclick[1]).slice(0, 50) : "-");
           });
-          const widgetMatch = /<altcha-widget\\b[^>]*>/i.exec(html);
-          const widgetAttrs = widgetMatch ? (widgetMatch[0].match(/\\b(?:challenge|challengeurl|name|algorithm|auto)\\s*=\\s*["'][^"']*["']/gi) || []).join(",").slice(0, 140) : "(sin widget)";
-          const bodyPreview = text(html.replace(/<input\\b[^>]*>/gi, "<input>")).slice(0, 140);
+          const widgetMatch = /<altcha-widget\b[^>]*>/i.exec(html);
+          const widgetAttrs = widgetMatch ? (widgetMatch[0].match(/\b(?:challenge|challengeurl|name|algorithm|auto)\s*=\s*["'][^"']*["']/gi) || []).join(",").slice(0, 140) : "(sin widget)";
+          const bodyPreview = text(html.replace(/<input\b[^>]*>/gi, "<input>")).slice(0, 140);
           const challengeSummary = "algorithm=" + algorithm + ",keys=" + keys.join(",") + ",cost=" + String(challengeData.cost || "-") + ",keyLength=" + String(challengeData.keyLength || "-") + ",keyPrefixLen=" + String(challengeData.keyPrefix || "").length + ",outerKeys=" + Object.keys(cj).join(",");
           if (/confirm.{0,30}human|verify.{0,30}human|human.{0,30}start the video/i.test(html)) log("servidor " + label + ": Voe sigue mostrando verificación humana; no hay configuración de video en esta respuesta");
       log("servidor " + label + ": respuesta ALTCHA sin configuración (jsonScript=" + hasJsonScript + ", altcha=" + hasAltcha + ", csrf=" + hasCsrf + ", source=" + hasSource + ")");
