@@ -73,6 +73,7 @@ function sites(extra = {}) {
     "https://embed69.org/vidurl/xyz": EMBED_PAGE,
     "https://vidhidepro.com/v/vh1": `<script>var p={"hls4":"/stream/abc/master.m3u8","hls2":"https://other.example/x.m3u8"};</script>`,
     "https://streamwish.to/e/sw1": `<script>var p={"hls2":"https://cdn.example/sw/master.m3u8"};</script>`,
+    "https://voe.sx/e/v1": `<script>var source="https://cdn.example/voe/master.m3u8";</script>`,
     ...extra,
   };
   const fetchImpl = async (url, init = {}) => {
@@ -189,10 +190,11 @@ test("resolve: opens Embed69, prefers Latin Spanish, reads Vidhide's relative pl
     assert.match(s.label, /^Vidhide lat/);
     assert.deepEqual(captured, []); // resolved over HTTP, no hidden browser
     // Voe is omitted; only StreamWish alternatives remain after Vidhide.
-    assert.deepEqual(s.alternatives.map((a) => a.label), ["Streamwish sub", "Streamwish"]);
+    assert.deepEqual(s.alternatives.map((a) => a.label), ["Streamwish sub", "Streamwish", "Voe lat"]);
     assert.deepEqual(s.alternatives.map((a) => a.ref), [
       "srv:1:mg:/pelicula/test-abc",
       "srv:2:mg:/pelicula/test-abc",
+      "srv:3:mg:/pelicula/test-abc",
     ]);
   });
 });
@@ -216,11 +218,16 @@ test("resolve: falls back to the hidden browser when a server can't be read dire
   });
 });
 
-test("resolve: Voe is ignored without browser capture or being requested", async () => {
-  await withKino({ [BASE + "/pelicula/test-abc"]: "<h1>x</h1>changeServer('https://voe.sx/e/zz')" }, async (plugin, { captured, asked }) => {
-    await assert.rejects(plugin.resolve("mg:/pelicula/test-abc"), (e) => e.code === "not_found");
+test("resolve: Voe remains visible as an alternative and resolves its direct HLS URL over HTTP", async () => {
+  await withKino({}, async (plugin, { captured, asked, logs }) => {
+    const first = await plugin.resolve("mg:/pelicula/test-abc");
+    assert.deepEqual(first.alternatives.map((a) => a.label), ["Streamwish sub", "Streamwish", "Voe lat"]);
+    const voe = await plugin.resolve("srv:3:mg:/pelicula/test-abc");
+    assert.equal(voe.url, "https://cdn.example/voe/master.m3u8");
+    assert.equal(voe.mime, "application/x-mpegURL");
     assert.deepEqual(captured, []);
-    assert.ok(!asked.some((a) => /voe\.sx/i.test(a)));
+    assert.ok(asked.some((a) => a.includes("GET https://voe.sx/e/v1")));
+    assert.ok(logs.some((line) => /entra al resolvedor HTTP de Voe/.test(line)));
   });
 });
 
