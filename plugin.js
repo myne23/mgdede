@@ -495,7 +495,6 @@ async function capture(server) {
   const label = displayLabel(server);
   let host = "";
   try { host = new URL(embed).hostname.toLowerCase(); } catch {}
-  const isVoe = server.key === "voe" || host === "voe.sx" || host.endsWith(".voe.sx") || host === "voe.to" || host.endsWith(".voe.to");
 
   log("servidor " + label + ": iniciando resolución HTTP directa (host=" + (host || "URL inválida") + ", clave=" + String(server.key || "") + ")");
   const manual = await resolveManual(embed, SITE, label, server.key);
@@ -1651,7 +1650,7 @@ async function resolveManual(embed, site, label, hint) {
     }
 
     if (host === "voe.sx" || host.endsWith(".voe.sx") || host === "voe.to" || host.endsWith(".voe.to") || hint === "voe") {
-      log("Megadede build=0.1.13; resolver Voe HTTP activo");
+      log("Megadede build=0.1.20-test; resolver Voe HTTP activo");
       log("servidor " + label + ": entra al resolvedor HTTP de Voe");
       const r = await kino.fetch(embed, { headers: { "User-Agent": headers["User-Agent"], Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", Referer: site.base + "/" }, timeoutMs: 12000 });
       if (!r.ok) { log("servidor " + label + ": VOE respondió HTTP " + r.status); return null; }
