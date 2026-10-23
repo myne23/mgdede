@@ -529,7 +529,7 @@ async function capture(server) {
 }
 
 export async function resolve(ref) {
-  log("Megadede plugin build=0.1.20-test (Voe HTTP enabled; Vidhide and StreamWish prioritized)");
+  log("Megadede plugin build=0.1.22-test (Voe HTTP enabled; Vidhide and StreamWish prioritized)");
   await null;
   const lazy = /^srv:(\d+):(mg:\/.*)$/.exec(String(ref));
   const epRef = lazy ? lazy[2] : String(ref);
@@ -1650,7 +1650,7 @@ async function resolveManual(embed, site, label, hint) {
     }
 
     if (host === "voe.sx" || host.endsWith(".voe.sx") || host === "voe.to" || host.endsWith(".voe.to") || hint === "voe") {
-      log("Megadede build=0.1.20-test; resolver Voe HTTP activo");
+      log("Megadede build=0.1.22-test; resolver Voe HTTP activo");
       log("servidor " + label + ": entra al resolvedor HTTP de Voe");
       const r = await kino.fetch(embed, { headers: { "User-Agent": headers["User-Agent"], Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", Referer: site.base + "/" }, timeoutMs: 12000 });
       if (!r.ok) { log("servidor " + label + ": VOE respondió HTTP " + r.status); return null; }
