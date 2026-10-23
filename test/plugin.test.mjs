@@ -189,7 +189,7 @@ test("resolve: opens Embed69, prefers Latin Spanish, reads Vidhide's relative pl
     assert.equal(s.mime, "application/x-mpegURL");
     assert.match(s.label, /^Vidhide lat/);
     assert.deepEqual(captured, []); // resolved over HTTP, no hidden browser
-    // Voe is omitted; only StreamWish alternatives remain after Vidhide.
+    // Voe remains visible as a lazy alternative after the preferred sources.
     assert.deepEqual(s.alternatives.map((a) => a.label), ["Streamwish sub", "Streamwish", "Voe lat"]);
     assert.deepEqual(s.alternatives.map((a) => a.ref), [
       "srv:1:mg:/pelicula/test-abc",
