@@ -4,7 +4,7 @@
   "version": "0.1.19",
   "apiVersion": 6,
   "entry": "plugin.js",
-  "description": "Películas, series y animes en español de Megadede. Inicio con tres listas, búsqueda, temporadas y capítulos. No pide cuenta.",
+  "description": "Películas y series de Megadede en Kino. Explora el catálogo, consulta episodios y elige entre los servidores disponibles para reproducir.",
   "author": "myne23",
   "homepage": "https://github.com/myne23/mgdede",
   "categories": [
